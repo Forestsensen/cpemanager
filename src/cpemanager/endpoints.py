@@ -8,6 +8,7 @@ TRAFFIC_STATISTICS = "/api/monitoring/traffic-statistics"
 AUTHENTICATION_LOGIN = "/api/user/authentication_login"
 CHALLENGE_LOGIN = "/api/user/challenge_login"
 TOKEN = "/api/webserver/token"
+SES_TOK_INFO = "/api/webserver/SesTokInfo"
 STATUS = "/api/monitoring/status"
 
 BASIC_INFORMATION = "/api/device/basic_information"
@@ -24,6 +25,7 @@ READ_ENDPOINTS = {
     SIGNAL,
     TRAFFIC_STATISTICS,
     TOKEN,
+    SES_TOK_INFO,
     STATUS,
     BASIC_INFORMATION,
     ANTENNA_TYPE,

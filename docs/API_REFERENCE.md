@@ -113,9 +113,26 @@ Example conversions now covered by Dart tests:
 | `eNB=411877`, `cell=0` | `ECI=105440512` |
 | `gNB=234295`, `cell=1040` | `GCI=959673360` |
 
-## Fiberhome FHTOOLAPIS
+## Fiberhome FHNCAPIS / FHTOOLAPIS
 
-The current Fiberhome HAR files only contain calls to:
+Login/session flow from `烽火(1)/login_v1.py`:
+
+```text
+GET /api/tmp/FHNCAPIS?ajaxmethod=get_refresh_sessionid
+POST /api/tmp/FHTOOLAPIS
+```
+
+Login request shape:
+
+```json
+{
+  "dataObj": {"username": "admin", "password": "password"},
+  "ajaxmethod": "app_do_login",
+  "sessionid": "session-from-get_refresh_sessionid"
+}
+```
+
+The current Fiberhome configuration and status calls use:
 
 ```text
 POST /api/tmp/FHTOOLAPIS
@@ -136,6 +153,9 @@ Confirmed methods:
 
 | Method | Purpose | Captured fields |
 | --- | --- | --- |
+| `app_do_login` | Login with username/password | optional `ret`, `errmsg`, `sessionid` |
+| `app_get_base_info` | Read live status | `RSSI`, `RSRQ`, `SSB_RSRP`, `SSB_SINR`, `PLMN`, `NR_Band`, `TAC`, `NCGI`, `EARFCN_NBR`, `PCI_NBR`, `RSRP_NBR`, `Temperature`, `TxSpeed`, `RxSpeed`, `modelName`, `RRCStatus`, `DlMCS`, `UlMCS`, `CQI`, `DlMimo`, `UlMimo`, `Software_version`, `WorkMode` |
+| `app_get_airplane` | Read flight-mode state | `airplaneOn` |
 | `app_get_network_info` | Read preferred network mode | `networkMode`, `ENDC` |
 | `app_set_network_info` | Write LTE/SA/NSA/Auto preset | `networkMode`, `ENDC` |
 | `app_get_lockband` | Read locked Band state | `lockBandEnable`, `LTELockBAND`, `NRLockBAND` |
@@ -159,4 +179,4 @@ Captured lock-cell mapping:
 | LTE | `1` |
 | NR | `2` |
 
-Known gaps: the HAR set does not include the login/session acquisition flow, live RF signal, traffic statistics, device information, or neighbor-cell status endpoints for Fiberhome.
+Known gaps: Fiberhome write operations still need hardware validation after readback. The currently captured `base_info` endpoint provides a combined primary/neighbor/status snapshot rather than separate Huawei-style signal, traffic, and neighbor APIs.

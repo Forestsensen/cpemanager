@@ -112,7 +112,10 @@ class _HomeScreenState extends State<HomeScreen> {
   FiberhomeClient fiberhomeClient() {
     return FiberhomeClient(
       host: normalizedHost,
-      sessionId: passwordController.text,
+      username: usernameController.text.trim().isEmpty
+          ? 'admin'
+          : usernameController.text.trim(),
+      password: passwordController.text,
     );
   }
 
@@ -125,9 +128,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> runTask(String label, Future<void> Function() task) async {
     if (passwordController.text.isEmpty) {
       setState(() {
-        error = vendor == CpeVendor.huawei
-            ? '请输入华为 CPE 管理密码。'
-            : '请输入烽火接口 sessionid。';
+        error =
+            vendor == CpeVendor.huawei ? '请输入华为 CPE 管理密码。' : '请输入烽火 CPE 管理密码。';
       });
       return;
     }
@@ -579,28 +581,26 @@ class LoginWorkspace extends StatelessWidget {
                   decoration: const InputDecoration(hintText: '192.168.8.1'),
                 ),
               ),
-              if (isHuawei) ...[
-                const SizedBox(height: 12),
-                FieldBlock(
-                  label: '用户名',
-                  helper: '华为默认 admin',
-                  child: TextField(
-                    controller: usernameController,
-                    decoration: const InputDecoration(hintText: 'admin'),
-                  ),
-                ),
-              ],
               const SizedBox(height: 12),
               FieldBlock(
-                label: isHuawei ? '管理密码' : 'SessionID',
+                label: '用户名',
+                helper: isHuawei ? '华为默认 admin' : '烽火默认 admin',
+                child: TextField(
+                  controller: usernameController,
+                  decoration: const InputDecoration(hintText: 'admin'),
+                ),
+              ),
+              const SizedBox(height: 12),
+              FieldBlock(
+                label: '管理密码',
                 helper: isHuawei
-                    ? '仅本次运行保存在内存中'
-                    : '烽火 HAR 只提供 FHTOOLAPIS 调用，当前先使用抓包 sessionid',
+                    ? '使用 SesTokInfo + challenge_login / authentication_login'
+                    : '使用 get_refresh_sessionid + app_do_login 自动登录',
                 child: TextField(
                   controller: passwordController,
-                  obscureText: isHuawei,
+                  obscureText: true,
                   decoration: InputDecoration(
-                    hintText: isHuawei ? 'CPE 管理密码' : '从抓包或登录流程复制',
+                    hintText: isHuawei ? '华为 CPE 管理密码' : '烽火 CPE 管理密码',
                   ),
                 ),
               ),
@@ -620,8 +620,8 @@ class LoginWorkspace extends StatelessWidget {
         InfoStrip(
           title: isHuawei ? 'Huawei 模式' : 'Fiberhome 模式',
           body: isHuawei
-              ? '使用 challenge_login / authentication_login 登录，并读取 signal、PLMN、流量、邻区。'
-              : '已从 HAR 接入网络模式、锁 Band、锁小区接口；射频实时状态还需要新的烽火抓包补齐。',
+              ? '优先使用 SesTokInfo token 队列登录，并读取 signal、PLMN、流量、邻区。'
+              : '使用 FHNCAPIS 获取 sessionid，再调用 app_do_login 和 app_get_base_info 读取信号/流量/设备状态。',
         ),
       ],
     );
@@ -1862,67 +1862,88 @@ class DashboardModel {
     Map<String, dynamic>? snapshot,
     Map<String, List<Map<String, String>>>? neighbors,
   ) {
+    final base = mapAt(snapshot, 'baseInfo');
     final network = mapAt(snapshot, 'networkInfo');
     final lockBand = mapAt(snapshot, 'lockBand');
     final cellList = mapAt(snapshot, 'cellList');
-    final mode = fiberhomeNetworkModeText(network);
+    final session = mapAt(snapshot, 'session');
+    final airplane = mapAt(snapshot, 'airplane');
+    final mode = firstValue(base, ['WorkMode'],
+        fallback: fiberhomeNetworkModeText(network));
     final enabled = cellList['enable'] == '1' ? '开启' : '关闭';
+    final tac = firstValue(base, ['TAC']);
+    final ncgi = firstValue(base, ['NCGI']);
+    final ecgi = firstValue(base, ['ECGI']);
+    final gnbCell = deriveNrGnbCell(gci: ncgi);
+    final primaryPci = firstCsvValue(firstValue(base, ['PCI_NBR']));
+    final primaryArfcn = firstCsvValue(firstValue(base, ['EARFCN_NBR']));
+    final primaryBand =
+        firstCsvValue(firstValue(base, ['NR_Band', 'BAND_NBR', 'BAND']));
+    final nrBand = primaryBand == '--' || primaryBand.startsWith('N')
+        ? primaryBand
+        : 'N$primaryBand';
     return DashboardModel(
       vendor: CpeVendor.fiberhome,
-      headerTitle: '烽火配置面板',
-      subtitle: 'FHTOOLAPIS / 配置操作',
+      headerTitle: '烽火 NR 主小区',
+      subtitle: '${firstValue(base, [
+            'modelName'
+          ], fallback: 'Fiberhome')} / FHTOOLAPIS',
       modeBadge: mode,
-      operatorBadge: 'Fiberhome',
-      rrcBadge: '配置接口',
+      operatorBadge: plmnLabel(firstValue(base, ['PLMN'])),
+      rrcBadge: base['RRCStatus'] == '1'
+          ? 'RRC 正常'
+          : 'RRC ${base['RRCStatus'] ?? '--'}',
       primaryItems: [
-        KvItem('网络模式', network['networkMode'] ?? '--'),
-        KvItem('ENDC', network['ENDC'] ?? '--'),
-        KvItem('锁 Band', lockBand['lockBandEnable'] == '1' ? '开启' : '关闭'),
-        KvItem('锁小区', enabled),
-        KvItem('NR Band', lockBand['NRLockBAND'] ?? '--'),
-        KvItem('LTE Band', lockBand['LTELockBAND'] ?? '--'),
+        KvItem('Band', nrBand),
+        KvItem('PCI', primaryPci),
+        KvItem('SS-ARFCN', primaryArfcn),
+        KvItem('BW', firstValue(base, ['DlBandWidth'])),
+        KvItem('TAC 十进制', decimalText(parseTacDecimal(tac))),
+        KvItem('GCI 十进制', decimalText(parseFlexibleInt(ncgi))),
       ],
       identityItems: [
-        const KvItem('接口', 'FHTOOLAPIS'),
-        const KvItem('TAC 十进制', '--'),
-        const KvItem('GCI 十进制', '--'),
-        const KvItem('ECI(LTE)', '--'),
-        KvItem('锁定记录', '${neighbors?['nr']?.length ?? 0} 条'),
-        const KvItem('Session', '手动'),
+        KvItem('gNB - Cell', gnbCell),
+        KvItem('NCGI', decimalText(parseFlexibleInt(ncgi))),
+        KvItem(
+            'ECGI', ecgi == '--' ? decimalText(parseFlexibleInt(ecgi)) : ecgi),
+        KvItem('软件版本', firstValue(base, ['Software_version'])),
+        KvItem('温度', formatTemperature(base['Temperature'])),
+        KvItem('Session', maskSession(session['sessionid'])),
       ],
       signalBars: [
-        BarItem.placeholder('RSRP'),
-        BarItem.placeholder('RSRQ'),
-        BarItem.placeholder('SINR'),
-        BarItem.placeholder('RSSI'),
-        BarItem.placeholder('CQI'),
+        BarItem.rsrp(firstValue(base, ['SSB_RSRP', 'RSRP'])),
+        BarItem.rsrq(firstValue(base, ['RSRQ'])),
+        BarItem.sinr(firstValue(base, ['SSB_SINR', 'SINR'])),
+        BarItem.rssi(firstValue(base, ['RSSI'])),
+        BarItem.cqi(firstValue(base, ['CQI'])),
       ],
-      powerItems: const [
-        KvItem('PUSCH', '--'),
-        KvItem('PUCCH', '--'),
-        KvItem('SRS', '--'),
-        KvItem('PRACH', '--'),
+      powerItems: [
+        KvItem('PUSCH', dbmText(base['PUSCH_TX_Power'])),
+        KvItem('PUCCH', dbmText(base['PUCCH_TX_Power'])),
+        KvItem('UL AMBR', kbpsText(base['UL_AMBR'])),
+        KvItem('DL AMBR', kbpsText(base['DL_AMBR'])),
       ],
-      downlinkItems: const [
-        KvItem('MCS', '--'),
-        KvItem('调制', '--'),
-        KvItem('RANK', '--'),
+      downlinkItems: [
+        KvItem('MCS', firstValue(base, ['DlMCS'])),
+        KvItem('MIMO', firstValue(base, ['DlMimo'])),
+        KvItem('带宽', firstValue(base, ['DlBandWidth'])),
       ],
-      uplinkItems: const [
-        KvItem('MCS', '--'),
-        KvItem('调制', '--'),
-        KvItem('MIMO', '--'),
+      uplinkItems: [
+        KvItem('MCS', firstValue(base, ['UlMCS'])),
+        KvItem('MIMO', firstValue(base, ['UlMimo'])),
+        KvItem('带宽', firstValue(base, ['UlBandWidth'])),
       ],
-      trafficItems: const [
-        KvItem('下载速率', '--'),
-        KvItem('上传速率', '--'),
-        KvItem('设备温度', '--'),
-        KvItem('软件版本', '--'),
-        KvItem('当月下载', '--'),
-        KvItem('当月上传', '--'),
+      trafficItems: [
+        KvItem('当前下载', rateText(base['RxSpeed'])),
+        KvItem('当前上传', rateText(base['TxSpeed'])),
+        KvItem('今日下载', formatBytes(base['todayRxBytes'])),
+        KvItem('今日上传', formatBytes(base['todayTxBytes'])),
+        KvItem('当月下载', formatBytes(base['monthRxBytes'])),
+        KvItem('当月上传', formatBytes(base['monthTxBytes'])),
       ],
       neighborCells: neighbors?['nr'] ?? <Map<String, String>>[],
-      caSummary: 'HAR 目前只包含配置接口；连接/邻区/设备统计需要继续补抓。',
+      caSummary:
+          '邻区来自 app_get_base_info：${neighbors?['nr']?.length ?? 0} 条；飞行模式=${airplane['airplaneOn'] ?? '--'}。',
       lockSummary:
           'NR=${lockBand['NRLockBAND'] ?? '--'} LTE=${lockBand['LTELockBAND'] ?? '--'}',
       lockItems: [
@@ -1930,9 +1951,11 @@ class DashboardModel {
         KvItem('NRLockBAND', lockBand['NRLockBAND'] ?? '--'),
         KvItem('LTELockBAND', lockBand['LTELockBAND'] ?? '--'),
         KvItem('cellLock', enabled),
+        KvItem('networkMode', network['networkMode'] ?? '--'),
+        KvItem('ENDC', network['ENDC'] ?? '--'),
       ],
-      downloadRate: '--',
-      uploadRate: '--',
+      downloadRate: rateText(base['RxSpeed']),
+      uploadRate: rateText(base['TxSpeed']),
     );
   }
 }
@@ -2054,6 +2077,40 @@ Map<String, String> mapAt(Map<String, dynamic>? value, String key) {
 Map<String, List<Map<String, String>>> fiberhomeNeighbors(
   Map<String, dynamic> snapshot,
 ) {
+  final baseInfo = snapshot['baseInfo'];
+  if (baseInfo is Map) {
+    final base = baseInfo
+        .map((key, value) => MapEntry(key.toString(), value.toString()));
+    final bands = splitCsv(base['BAND_NBR']);
+    final arfcns = splitCsv(base['EARFCN_NBR']);
+    final pcis = splitCsv(base['PCI_NBR']);
+    final rsrps = splitCsv(base['RSRP_NBR']);
+    final rsrqs = splitCsv(base['RSRQ_NBR']);
+    final sinrs = splitCsv(base['SINR_NBR']);
+    final count = [
+      bands.length,
+      arfcns.length,
+      pcis.length,
+      rsrps.length,
+      rsrqs.length,
+      sinrs.length,
+    ].reduce((value, element) => value > element ? value : element);
+    if (count > 0) {
+      return <String, List<Map<String, String>>>{
+        'nr': [
+          for (var index = 0; index < count; index += 1)
+            <String, String>{
+              'band': valueAt(bands, index),
+              'arfcn': valueAt(arfcns, index),
+              'pci': valueAt(pcis, index),
+              'rsrp': valueAt(rsrps, index),
+              'rsrq': valueAt(rsrqs, index),
+              'sinr': valueAt(sinrs, index),
+            },
+        ],
+      };
+    }
+  }
   final cellList = snapshot['cellList'];
   if (cellList is! Map) {
     return <String, List<Map<String, String>>>{'nr': []};
@@ -2074,6 +2131,26 @@ Map<String, List<Map<String, String>>> fiberhomeNeighbors(
       };
     }).toList(),
   };
+}
+
+List<String> splitCsv(String? value) {
+  if (value == null || value.trim().isEmpty || value.trim() == '--') {
+    return <String>[];
+  }
+  return value
+      .split(',')
+      .map((item) => item.trim())
+      .where((item) => item.isNotEmpty)
+      .toList();
+}
+
+String valueAt(List<String> values, int index) {
+  return index < values.length ? values[index] : '--';
+}
+
+String firstCsvValue(String value) {
+  final values = splitCsv(value);
+  return values.isEmpty ? value : values.first;
 }
 
 String firstValue(
@@ -2103,6 +2180,17 @@ String operatorLabel(Map<String, String> plmn) {
     return numeric;
   }
   return '--';
+}
+
+String plmnLabel(String plmn) {
+  return switch (plmn) {
+    '46000' || '46002' || '46007' || '46008' => '中国移动 $plmn',
+    '46001' || '46006' || '46009' => '中国联通 $plmn',
+    '46003' || '46005' || '46011' => '中国电信 $plmn',
+    '46015' => '中国广电 $plmn',
+    '--' || '' => '--',
+    _ => plmn,
+  };
 }
 
 String cleanBand(String value) {
@@ -2192,6 +2280,46 @@ String rateText(String? value) {
     return '--';
   }
   return '${(bytes * 8 / 1000000).toStringAsFixed(2)} Mbps';
+}
+
+String formatTemperature(String? value) {
+  final number = numeric(value ?? '');
+  if (number == null) {
+    return '--';
+  }
+  final celsius = number.abs() > 1000 ? number / 1000 : number;
+  return '${celsius.toStringAsFixed(1)} °C';
+}
+
+String dbmText(String? value) {
+  if (value == null || value.trim().isEmpty) {
+    return '--';
+  }
+  return value.toLowerCase().contains('dbm') ? value : '${value}dBm';
+}
+
+String kbpsText(String? value) {
+  final number = int.tryParse(value ?? '');
+  if (number == null) {
+    return '--';
+  }
+  if (number >= 1000000) {
+    return '${(number / 1000000).toStringAsFixed(2)} Gbps';
+  }
+  if (number >= 1000) {
+    return '${(number / 1000).toStringAsFixed(1)} Mbps';
+  }
+  return '$number Kbps';
+}
+
+String maskSession(String? value) {
+  if (value == null || value.isEmpty) {
+    return '--';
+  }
+  if (value.length <= 8) {
+    return value;
+  }
+  return '${value.substring(0, 4)}...${value.substring(value.length - 4)}';
 }
 
 double? numeric(String value) {

@@ -70,6 +70,19 @@ class CpeClient {
   }
 
   Future<String> requestToken() async {
+    try {
+      final sesTok = await getXml('/api/webserver/SesTokInfo');
+      final session = _extractTag(sesTok, 'SesInfo');
+      final token = _extractTag(sesTok, 'TokInfo');
+      if (session.isNotEmpty) {
+        _cookies['SessionID'] = session;
+      }
+      if (token.isNotEmpty) {
+        return token;
+      }
+    } catch (_) {
+      // Older Huawei firmware may only expose /api/webserver/token.
+    }
     final token = _extractTag(await getXml('/api/webserver/token'), 'token');
     if (token.length > 32) {
       return token.substring(32);
@@ -78,8 +91,16 @@ class CpeClient {
   }
 
   Future<void> login() async {
-    await getXml('/');
-    await getXml('/api/monitoring/status');
+    try {
+      await getXml('/html/content.html');
+    } catch (_) {
+      await getXml('/');
+    }
+    try {
+      await getXml('/api/user/state-login');
+    } catch (_) {
+      await getXml('/api/monitoring/status');
+    }
     _requestToken = await requestToken();
 
     final firstNonce = _randomHex(32);
@@ -93,6 +114,11 @@ class CpeClient {
           '</request>',
     );
     _raiseForApiCode(challenge, 'challenge_login');
+    try {
+      _requestToken = await requestToken();
+    } catch (_) {
+      // Some firmware sends the next token on the challenge response header.
+    }
     final salt = _extractTag(challenge, 'salt');
     final iterations = int.parse(_extractTag(challenge, 'iterations'));
     final serverNonce = _extractTag(challenge, 'servernonce');
@@ -369,7 +395,7 @@ class CpeClient {
   }
 
   void _applyHeaders(HttpClientRequest request) {
-    request.headers.set('User-Agent', 'CPEManager/0.3.0');
+    request.headers.set('User-Agent', 'CPEManager/0.3.1');
     request.headers.set('X-Requested-With', 'XMLHttpRequest');
     request.headers.set('Cache-Control', 'no-cache');
     request.headers.set('Pragma', 'no-cache');

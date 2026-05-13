@@ -4,37 +4,37 @@ Huawei CPE management toolkit, now expanding into a multi-vendor CPE app. The pr
 
 ## Version
 
-- Current published version: `0.3.0`
-- Current Flutter app version: `0.3.0+3`
+- Current published version: `0.3.1`
+- Current Flutter app version: `0.3.1+4`
 - Release state: alpha
 - Maintainer account email: `2991077067@qq.com`
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
-- Latest release notes: [docs/releases/v0.3.0.md](docs/releases/v0.3.0.md)
+- Latest release notes: [docs/releases/v0.3.1.md](docs/releases/v0.3.1.md)
 - Handoff docs: [HANDOFF.md](HANDOFF.md), [PROJECT_MEMORY.md](PROJECT_MEMORY.md), [MODIFICATIONS.md](MODIFICATIONS.md)
 
 ## Latest Release Assets
 
-Release `v0.3.0` is published at [GitHub Releases](https://github.com/yuan-666/cpemanager/releases/tag/v0.3.0).
+Release `v0.3.1` is published at [GitHub Releases](https://github.com/yuan-666/cpemanager/releases/tag/v0.3.1).
 
 | Asset | Use |
 | --- | --- |
-| `CPEManager-android-v0.3.0-release.apk` | Recommended Android phone test package. |
-| `CPEManager-android-v0.3.0-debug.apk` | Debug Android package for troubleshooting. |
-| `CPEManager-macos-arm64-v0.3.0-app.zip` | macOS Apple Silicon desktop app bundle. |
-| `CPEManager-web-v0.3.0.zip` | Flutter Web/PWA static build. |
-| `cpemanager-0.3.0-py3-none-any.whl` | Python CLI and desktop wheel. |
+| `CPEManager-android-v0.3.1-release.apk` | Recommended Android phone test package. |
+| `CPEManager-android-v0.3.1-debug.apk` | Debug Android package for troubleshooting. |
+| `CPEManager-macos-arm64-v0.3.1-app.zip` | macOS Apple Silicon desktop app bundle. |
+| `CPEManager-web-v0.3.1.zip` | Flutter Web/PWA static build. |
+| `cpemanager-0.3.1-py3-none-any.whl` | Python CLI and desktop wheel. |
 | `SHA256SUMS.txt` | Checksums for release assets. |
 
 Android alpha install:
 
 ```bash
-adb install -r CPEManager-android-v0.3.0-release.apk
+adb install -r CPEManager-android-v0.3.1-release.apk
 ```
 
 Python wheel install:
 
 ```bash
-python -m pip install cpemanager-0.3.0-py3-none-any.whl
+python -m pip install cpemanager-0.3.1-py3-none-any.whl
 ```
 
 ## What Is Included
@@ -78,9 +78,10 @@ Additional discovered device APIs used by existing scripts:
 
 Fiberhome/烽火 alpha APIs captured from HAR:
 
+- `GET /api/tmp/FHNCAPIS?ajaxmethod=get_refresh_sessionid` obtains the login sessionid.
 - `POST /api/tmp/FHTOOLAPIS` with JSON body fields `ajaxmethod`, `sessionid`, and `dataObj`.
-- Confirmed methods: `app_get_network_info`, `app_set_network_info`, `app_get_lockband`, `app_set_lockband`, `app_get_cell_list`, `app_set_cell_list`.
-- The HAR set did not include session acquisition, live signal, traffic, device-info, or neighbor-cell endpoints, so those remain pending for Fiberhome.
+- Confirmed methods: `app_do_login`, `app_get_base_info`, `app_get_airplane`, `app_get_network_info`, `app_set_network_info`, `app_get_lockband`, `app_set_lockband`, `app_get_cell_list`, `app_set_cell_list`.
+- `app_get_base_info` now supplies Fiberhome signal, traffic, model, software, TAC/NCGI, MCS, MIMO, temperature, and neighbor rows.
 
 ## Conda Setup
 
@@ -152,7 +153,7 @@ The phone app lives in `apps/flutter_cpemanager`. It is a Flutter app with a den
 Current mobile device modes:
 
 - Huawei: password login, signal/status/traffic/PLMN reads, neighbor reads, automatic network mode, and unlock-all.
-- Fiberhome/烽火: manual `sessionid` entry for the captured `FHTOOLAPIS` flow, Auto/LTE/SA/NSA mode writes, lock Band, NR lock cell, 4G+5G combined lock cell, clear lock-cell list, and readback of network/lock state.
+- Fiberhome/烽火: username/password login for the captured `FHNCAPIS` + `FHTOOLAPIS` flow, live `app_get_base_info` dashboard, Auto/LTE/SA/NSA mode writes, lock Band, NR lock cell, 4G+5G combined lock cell, clear lock-cell list, and readback of network/lock state.
 
 Cell calculations shown in the app:
 

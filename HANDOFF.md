@@ -12,12 +12,12 @@
 - Tkinter 桌面 GUI
 - PyInstaller 桌面构建脚本
 - Flutter 多端 App，Android debug/release APK 已可构建
-- Flutter App 已加入 Huawei/Fiberhome(烽火) 设备选择；烽火当前是基于 HAR 的配置操作 alpha 适配
+- Flutter App 已加入 Huawei/Fiberhome(烽火) 设备选择；烽火当前支持基于 `烽火(1)` 的用户名/密码登录、base_info 状态读取和配置操作
 - API/打包文档和基础测试
 
-当前发布版本：`0.3.0`
+当前发布版本：`0.3.1`
 
-当前 Flutter App 开发版本：`0.3.0+3`
+当前开发版本：Python `0.3.1`，Flutter App `0.3.1+4`
 
 首个提交描述：
 
@@ -32,11 +32,12 @@ GitHub 同步状态：
 - 首个提交：`b2cb9e4 chore: initialize cpemanager app project`
 - 本轮移动端功能提交：`caf42c9 feat: enable Android Flutter app`
 - 本轮烽火看板提交：`70b42b6 feat: add fiberhome mobile dashboard`
+- 本轮登录修复方向：华为 `SesTokInfo` token 队列；烽火 `get_refresh_sessionid` + `app_do_login` + `app_get_base_info`
 - GitHub Actions：`Desktop Build` workflow 已 active。
-- 发布说明：`docs/releases/v0.3.0.md`
-- GitHub Release：`https://github.com/yuan-666/cpemanager/releases/tag/v0.3.0`
+- 发布说明：`docs/releases/v0.3.1.md`
+- GitHub Release：`https://github.com/yuan-666/cpemanager/releases/tag/v0.3.1`
 - Release assets 已确认全部上传完成。
-- 本轮 Flutter/Fiberhome 改动已整理为 `v0.3.0` GitHub Release；本地 APK 已重新构建。
+- 本轮登录修复和烽火 base_info 改动已整理为 `v0.3.1` GitHub Release；本地 APK 已重新构建。
 
 ## 先读文件
 
@@ -113,7 +114,7 @@ python tools/build_desktop.py --onedir
 
 - `dist/desktop/CPEManager.app`
 - `dist/desktop/CPEManager/CPEManager`
-- `dist/release/v0.3.0/cpemanager-0.3.0-py3-none-any.whl`
+- `dist/release/v0.3.1/cpemanager-0.3.1-py3-none-any.whl`
 
 移动端 Android：
 
@@ -127,16 +128,16 @@ adb install -r build/app/outputs/flutter-apk/app-debug.apk
 
 - `apps/flutter_cpemanager/build/app/outputs/flutter-apk/app-debug.apk`
 - `apps/flutter_cpemanager/build/app/outputs/flutter-apk/app-release.apk`
-- 当前本地 APK 来自 Flutter app `0.3.0+3`。
+- 当前本地 APK 来自 Flutter app `0.3.1+4`。
 
 Release assets staging:
 
-- `dist/release/v0.3.0/CPEManager-android-v0.3.0-release.apk`
-- `dist/release/v0.3.0/CPEManager-android-v0.3.0-debug.apk`
-- `dist/release/v0.3.0/CPEManager-macos-arm64-v0.3.0-app.zip`
-- `dist/release/v0.3.0/CPEManager-web-v0.3.0.zip`
-- `dist/release/v0.3.0/cpemanager-0.3.0-py3-none-any.whl`
-- `dist/release/v0.3.0/SHA256SUMS.txt`
+- `dist/release/v0.3.1/CPEManager-android-v0.3.1-release.apk`
+- `dist/release/v0.3.1/CPEManager-android-v0.3.1-debug.apk`
+- `dist/release/v0.3.1/CPEManager-macos-arm64-v0.3.1-app.zip`
+- `dist/release/v0.3.1/CPEManager-web-v0.3.1.zip`
+- `dist/release/v0.3.1/cpemanager-0.3.1-py3-none-any.whl`
+- `dist/release/v0.3.1/SHA256SUMS.txt`
 
 Web/PWA：
 
@@ -160,7 +161,7 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 flutter test
 JAVA_HOME=/opt/homebrew/opt/openjdk@17 flutter analyze
 JAVA_HOME=/opt/homebrew/opt/openjdk@17 flutter build web
 conda run -n cpemanager python -m unittest discover -s tests
-conda run -n cpemanager python -m pip wheel --no-deps --no-build-isolation . -w dist/release/v0.3.0
+conda run -n cpemanager python -m pip wheel --no-deps --no-build-isolation . -w dist/release/v0.3.1
 conda run -n cpemanager python tools/build_desktop.py --onedir
 conda run -n cpemanager cpemanager-desktop --version
 ```
@@ -170,7 +171,7 @@ conda run -n cpemanager cpemanager-desktop --version
 ```text
 Ran 10 tests in 0.001s
 OK
-CPE Manager 0.3.0
+CPE Manager 0.3.1
 ```
 
 本轮 Flutter/Fiberhome 验证额外确认：
@@ -200,8 +201,10 @@ conda run -n cpemanager python tools/build_desktop.py --onedir
 
 - 没有做真实 CPE 登录测试，因为需要真实密码并确认机器连到 `192.168.8.1`。
 - 没有做真实写操作测试，锁频/网络模式/天线切换可能影响设备网络，必须谨慎。
-- 烽火 HAR 只覆盖 `POST /api/tmp/FHTOOLAPIS` 的配置接口，未覆盖 session 获取、实时信号、流量、设备信息和邻区状态；当前 App 要求手动输入 `sessionid`。
-- 不要提交 `烽火/*.har` 或其他原始 HAR，里面可能包含 live `sessionid`。
+- 烽火 `烽火(1)/login_v1.py` 已确认登录流程：`GET /api/tmp/FHNCAPIS?ajaxmethod=get_refresh_sessionid`，再 `POST /api/tmp/FHTOOLAPIS` 的 `app_do_login`。
+- 烽火 `信号(1).har` 已确认 `app_get_base_info` 返回实时信号、流量、设备信息和邻区 CSV 字段；App 已映射到 dashboard。
+- 不要提交 `烽火/*.har`、`烽火(1)/*.har` 或其他原始 HAR，里面可能包含 live `sessionid`。
+- 华为 `125003` 登录错误已按新 `华为.har` 改为 `SesTokInfo` 优先、双 token 登录；没有真实设备密码，仍需要用户真机验证。
 - `adb devices` 当前未发现已连接手机，所以 Android APK 尚未做真机安装启动验证。
 - Flutter `3.41.9` / Dart `3.11.5` 已安装并可构建 Android debug APK。
 - Android SDK 位于 `/opt/homebrew/share/android-commandlinetools`，OpenJDK 17 位于 `/opt/homebrew/opt/openjdk@17`。
@@ -216,13 +219,14 @@ conda run -n cpemanager python tools/build_desktop.py --onedir
 ## 下一步建议
 
 1. 新增 live smoke test：默认只读，使用 `CPE_HOST/CPE_USERNAME/CPE_PASSWORD`，写操作必须显式 `CPE_ALLOW_WRITE=1`。
-2. 继续补抓烽火登录/session 获取、实时信号、流量、设备信息和邻区状态接口。
-3. 增加 fixtures：Huawei 登录 challenge、authentication、signal、nbrcell、seccell、lock-freq、net-mode；Fiberhome `FHTOOLAPIS` 的六个方法。
-4. 把 `format_status_summary()` 从 `HuaweiCPE` 客户端中拆到展示层。
-5. Tkinter GUI 增加安全写操作确认、锁频输入表单和状态恢复提示。
-6. 安装完整 Xcode 和 CocoaPods 后验证 iOS/macOS Flutter native build。
-7. 增加 Android release signing、`.aab` 构建和发布说明。
-8. 用 GitHub Actions 在 Windows/macOS 分别构建桌面产物。
+2. 用真实华为设备验证 `125003` 是否消失；如仍失败，抓取失败响应和当前 token/session 状态。
+3. 用真实烽火设备验证用户名/密码登录、`app_get_base_info` 展示、锁 Band/锁小区写入读回。
+4. 增加 fixtures：Huawei `SesTokInfo`、challenge、authentication、signal、nbrcell、seccell、lock-freq、net-mode；Fiberhome `FHNCAPIS` 和 `FHTOOLAPIS` 的登录/状态/配置方法。
+5. 把 `format_status_summary()` 从 `HuaweiCPE` 客户端中拆到展示层。
+6. Tkinter GUI 增加安全写操作确认、锁频输入表单和状态恢复提示。
+7. 安装完整 Xcode 和 CocoaPods 后验证 iOS/macOS Flutter native build。
+8. 增加 Android release signing、`.aab` 构建和发布说明。
+9. 用 GitHub Actions 在 Windows/macOS 分别构建桌面产物。
 
 ## 接手纪律
 

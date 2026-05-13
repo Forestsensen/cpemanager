@@ -34,12 +34,9 @@
 - `v0.2.0` release assets 本地暂存在 `dist/release/v0.2.0/`，该目录被 git ignore，资产通过 GitHub Release 上传。
 - `v0.2.0` GitHub Release URL：`https://github.com/yuan-666/cpemanager/releases/tag/v0.2.0`。
 - 2026-05-13 已确认 release 包含 6 个 uploaded assets：release APK、debug APK、macOS arm64 app zip、Web/PWA zip、Python wheel、SHA256SUMS。
-- `v0.3.0` 发布说明文件：`docs/releases/v0.3.0.md`。
-- `v0.3.0` release assets 本地暂存在 `dist/release/v0.3.0/`，该目录被 git ignore，资产通过 GitHub Release 上传。
-- `v0.3.0` GitHub Release URL：`https://github.com/yuan-666/cpemanager/releases/tag/v0.3.0`。
-- 2026-05-13 已确认 `v0.3.0` release 包含 6 个 uploaded assets：release APK、debug APK、macOS arm64 app zip、Web/PWA zip、Python wheel、SHA256SUMS。
-- 当前 Flutter App 版本：`0.3.0+3`。
-- 本地 HAR 抓包目录 `烽火/` 不要提交；HAR 内含 `sessionid`，`.gitignore` 已忽略 `*.har`。
+- 当前开发版本：Python `0.3.1`，Flutter App `0.3.1+4`。
+- 最近已发布版本：`v0.3.1`，GitHub Release URL：`https://github.com/yuan-666/cpemanager/releases/tag/v0.3.1`。
+- 本地 HAR 抓包目录 `烽火/`、`烽火(1)/` 不要提交；HAR 内含 `sessionid`，`.gitignore` 已忽略 `*.har` 和 `烽火*/`。
 - conda 环境名：`cpemanager`
 - Python：3.11.15
 - 主要 Python 运行依赖：`requests`
@@ -90,7 +87,7 @@ Python 包采用 `src/` 布局：
 Flutter App 采用 Dart 客户端：
 
 - `apps/flutter_cpemanager/lib/api/cpe_client.dart`：Huawei XML API 客户端，含 challenge/authentication 登录、状态读取、邻区读取、自动模式和解除锁频。
-- `apps/flutter_cpemanager/lib/api/fiberhome_client.dart`：Fiberhome/烽火 `FHTOOLAPIS` JSON 客户端，当前依赖手动输入 `sessionid`。
+- `apps/flutter_cpemanager/lib/api/fiberhome_client.dart`：Fiberhome/烽火 `FHNCAPIS` + `FHTOOLAPIS` JSON 客户端，当前使用用户名/密码自动获取 sessionid 并登录。
 - `apps/flutter_cpemanager/lib/domain/cell_math.dart`：TAC 十进制、LTE ECI、NR GCI 和 ECI/GCI 拆分工具。
 - `apps/flutter_cpemanager/lib/main.dart`：深色密集看板 UI，含 Huawei/Fiberhome 设备选择、PCC、载波聚合、锁频、速率/原始快照工作区。
 
@@ -137,12 +134,19 @@ Flutter App 采用 Dart 客户端：
 
 Fiberhome/烽火已确认 API：
 
+- `GET /api/tmp/FHNCAPIS?ajaxmethod=get_refresh_sessionid`
 - `POST /api/tmp/FHTOOLAPIS`
 - JSON 请求体包含 `ajaxmethod`、`sessionid`、`dataObj`。
-- 已确认 `ajaxmethod`：`app_get_network_info`、`app_set_network_info`、`app_get_lockband`、`app_set_lockband`、`app_get_cell_list`、`app_set_cell_list`。
+- 已确认 `ajaxmethod`：`app_do_login`、`app_get_base_info`、`app_get_airplane`、`app_get_network_info`、`app_set_network_info`、`app_get_lockband`、`app_set_lockband`、`app_get_cell_list`、`app_set_cell_list`。
+- `app_get_base_info` 返回烽火信号/流量/设备/邻区混合状态，字段包括 `RSSI/RSRQ/SSB_RSRP/SSB_SINR/PLMN/NR_Band/TAC/NCGI/EARFCN_NBR/PCI_NBR/Temperature/TxSpeed/RxSpeed/modelName/RRCStatus/DlMCS/UlMCS/CQI/DlMimo/UlMimo/Software_version/WorkMode`。
 - 网络模式枚举：LTE=`networkMode:0, ENDC:1`；SA=`2,1`；NSA=`3,2`；Auto=`3,3`。
 - 锁小区中 `act=1` 推断为 LTE，`act=2` 推断为 NR；需要真机继续确认。
-- 当前 HAR 没有 session 获取、实时信号、流量、设备信息和邻区状态接口。
+
+Huawei 新 HAR 登录注意事项：
+
+- 新设备登录前优先用 `/api/webserver/SesTokInfo` 获取 `SesInfo` 和 `TokInfo`。
+- `challenge_login` 和 `authentication_login` 需要分别使用不同 token；只用旧 `/api/webserver/token` 容易出现 `challenge_login` 错误码 `125003`。
+- 客户端仍保留旧 `/api/webserver/token` fallback，以兼容之前的设备。
 
 小区换算规则：
 
@@ -184,7 +188,7 @@ Flutter 方向：
 - Android debug APK 已验证产出：`apps/flutter_cpemanager/build/app/outputs/flutter-apk/app-debug.apk`。
 - Android release APK 已验证产出：`apps/flutter_cpemanager/build/app/outputs/flutter-apk/app-release.apk`。
 - Web/PWA 已验证产出：`apps/flutter_cpemanager/build/web`。
-- 当前本地 APK 已由 Flutter app `0.3.0+3` 重新构建；`v0.3.0` GitHub Release 使用同一版本线整理资产。
+- 当前本地 APK 已由 Flutter app `0.3.1+4` 重新构建；`v0.3.1` GitHub Release 使用同一版本线整理资产。
 - Android 包名/namespace：`com.cpemanager.app`。
 - iOS bundle id：`com.cpemanager.app`；macOS bundle id：`com.cpemanager.app.macos`；Windows executable name：`CPEManager`；web manifest title：`CPE Manager`。
 - Android 允许明文 HTTP 访问 `192.168.8.1`；iOS 已配置局域网说明和 HTTP 放行；macOS 已配置 network client entitlement。

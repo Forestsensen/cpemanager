@@ -24,3 +24,4 @@ apps/flutter_cpemanager/.flutter-plugins-dependencies
 
 # Local packet captures can contain session ids or device identifiers.
 *.har
+烽火*/

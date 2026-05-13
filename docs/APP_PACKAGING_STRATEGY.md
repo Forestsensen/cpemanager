@@ -77,12 +77,12 @@ apps/flutter_cpemanager/build/app/outputs/flutter-apk/app-release.apk
 Release asset staging:
 
 ```bash
-dist/release/v0.3.0/
+dist/release/v0.3.1/
 ```
 
 The previous `v0.2.0` GitHub Release includes Android release/debug APKs, a macOS arm64 desktop `.app.zip`, a Web/PWA zip, the Python wheel, and `SHA256SUMS.txt`.
 
-The `v0.3.0` GitHub Release includes Android release/debug APKs, a macOS arm64 desktop `.app.zip`, a Web/PWA zip, the Python wheel, and `SHA256SUMS.txt`. The Flutter app version is `0.3.0+3`.
+The `v0.3.1` GitHub Release includes Android release/debug APKs, a macOS arm64 desktop `.app.zip`, a Web/PWA zip, the Python wheel, and `SHA256SUMS.txt`. The Flutter app version is `0.3.1+4`.
 
 Install to a USB-connected Android phone with developer mode and USB debugging enabled:
 
@@ -130,4 +130,4 @@ The Flutter client should mirror these methods:
 
 Before mobile releases, add recorded XML fixtures for every supported endpoint and run the same parser tests in Python and Dart.
 
-Fiberhome/烽火 is a separate adapter because the captured device uses JSON `FHTOOLAPIS` methods rather than Huawei XML endpoints. Do not commit raw HAR files; they can contain live `sessionid` values.
+Fiberhome/烽火 is a separate adapter because the captured device uses JSON `FHNCAPIS` / `FHTOOLAPIS` methods rather than Huawei XML endpoints. Do not commit raw HAR files or local capture folders; they can contain live `sessionid` values.

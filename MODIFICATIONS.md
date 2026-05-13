@@ -4,6 +4,26 @@
 
 ## 2026-05-13
 
+- 修复华为登录和完善烽火真实状态接口：
+  - 新增读取 `华为.har` 的登录差异：优先使用 `/api/webserver/SesTokInfo`，并为 `challenge_login` 和 `authentication_login` 分别获取 token，修复 App 登录时报 `challenge_login returned error code 125003` 的主要原因。
+  - Python `HuaweiCPE` 和 Flutter `CpeClient` 同步采用 SesTokInfo 优先、旧 `/api/webserver/token` fallback 的策略。
+  - 按 `烽火(1)/login_v1.py` 将 Flutter `FiberhomeClient` 从手动 sessionid 改为用户名/密码自动登录：`get_refresh_sessionid` -> `app_do_login` -> `app_get_base_info`。
+  - 接入 `app_get_base_info` 的真实字段：RSSI、RSRQ、SSB_RSRP、SSB_SINR、PLMN、NR_Band、TAC、NCGI、EARFCN_NBR、PCI_NBR、RSRP_NBR、Temperature、TxSpeed、RxSpeed、modelName、RRCStatus、MCS、MIMO、AMBR、Software_version、WorkMode。
+  - 接入 `app_get_airplane`，并在状态摘要中显示飞行模式读数。
+  - 烽火 UI 从 `SessionID` 输入改为用户名/管理密码登录，PCC/信号/流量/邻区面板改为展示 base_info 真实数据。
+  - `.gitignore` 增加 `烽火*/`，避免提交本地 HAR 抓包目录和临时登录脚本。
+  - 版本推进到 Python `0.3.1`、Flutter `0.3.1+4`。
+  - 验证通过：`flutter test`、`flutter analyze`、`flutter build apk --debug`、`flutter build apk --release`、`conda run -n cpemanager python -m unittest discover -s tests`、`conda run -n cpemanager python -m compileall -q ...`。
+  - 新增发布说明：`docs/releases/v0.3.1.md`。
+  - 统一整理 release assets 到 `dist/release/v0.3.1/`：
+    - `CPEManager-android-v0.3.1-release.apk`
+    - `CPEManager-android-v0.3.1-debug.apk`
+    - `CPEManager-macos-arm64-v0.3.1-app.zip`
+    - `CPEManager-web-v0.3.1.zip`
+    - `cpemanager-0.3.1-py3-none-any.whl`
+    - `SHA256SUMS.txt`
+  - `aapt dump badging` 确认 release APK：包名 `com.cpemanager.app`、版本 `0.3.1`、versionCode `4`。
+  - `conda run -n cpemanager cpemanager-desktop --version` 输出 `CPE Manager 0.3.1`。
 - 推进 Flutter App 看板化和烽火/华为设备选择：
   - 将 `apps/flutter_cpemanager/lib/main.dart` 从偏简洁的状态页改成深色密集工具看板：登录、PCC、载波聚合、锁频、速率/原始快照五个工作区。
   - 新增 Huawei / Fiberhome(烽火) 设备选择，切换后分别使用 Huawei XML 客户端或 Fiberhome `FHTOOLAPIS` 客户端。

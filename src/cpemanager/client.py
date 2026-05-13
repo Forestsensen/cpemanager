@@ -88,13 +88,20 @@ class HuaweiCPE:
 
     def login(self) -> bool:
         try:
-            self._request("GET", "/")
-            self._request("GET", endpoints.STATUS)
+            try:
+                self._request("GET", "/html/content.html")
+            except requests.RequestException:
+                self._request("GET", "/")
+            try:
+                self._request("GET", "/api/user/state-login")
+            except requests.RequestException:
+                self._request("GET", endpoints.STATUS)
+            initial_session = self.session_id
+
+            self.session.headers["__RequestVerificationToken"] = self.request_token()
             initial_session = self.session_id
             if not initial_session:
                 raise LoginError("无法获取初始 SessionID")
-
-            self.session.headers["__RequestVerificationToken"] = self.request_token()
             first_nonce = secrets.token_hex(32)
             challenge = self._request(
                 "POST",
@@ -109,6 +116,10 @@ class HuaweiCPE:
                 headers=self._xml_headers(),
             )
             self._raise_for_api_code(challenge.text, "challenge_login")
+            try:
+                self.session.headers["__RequestVerificationToken"] = self.request_token()
+            except CPEError:
+                pass
             challenge_root = parse_root(challenge.text)
             salt = tag_text(challenge_root, "salt")
             iterations_text = tag_text(challenge_root, "iterations")
@@ -169,6 +180,17 @@ class HuaweiCPE:
         return bytes(a ^ b for a, b in zip(client_key, signature)).hex()
 
     def request_token(self) -> str:
+        try:
+            response = self._request("GET", endpoints.SES_TOK_INFO)
+            root = parse_root(response.text)
+            session_id = tag_text(root, "SesInfo")
+            token = tag_text(root, "TokInfo")
+            if session_id:
+                self.session.cookies.set("SessionID", session_id, path="/")
+            if token:
+                return token
+        except (requests.RequestException, XMLParseError):
+            pass
         response = self._request("GET", endpoints.TOKEN)
         root = parse_root(response.text)
         token = tag_text(root, "token")

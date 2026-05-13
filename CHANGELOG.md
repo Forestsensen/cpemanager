@@ -2,6 +2,42 @@
 
 All notable changes to this project are documented here.
 
+## 0.3.1 - 2026-05-13
+
+Huawei login and Fiberhome live-status release.
+
+### Release Assets
+
+- `CPEManager-android-v0.3.1-release.apk`
+- `CPEManager-android-v0.3.1-debug.apk`
+- `CPEManager-macos-arm64-v0.3.1-app.zip`
+- `CPEManager-web-v0.3.1.zip`
+- `cpemanager-0.3.1-py3-none-any.whl`
+- `SHA256SUMS.txt`
+
+### Added
+
+- Added Fiberhome/烽火 automatic login from the new `login_v1.py` flow: `get_refresh_sessionid` followed by `app_do_login`.
+- Added Fiberhome `app_get_base_info` status mapping for model, PLMN, WorkMode, RRC, NR band, ARFCN, PCI, RSRP/RSRQ/SINR/RSSI/CQI, MCS, MIMO, AMBR, temperature, software version, traffic speeds, daily/monthly bytes, TAC, and NCGI.
+- Added Fiberhome neighbor parsing from comma-separated `BAND_NBR`, `EARFCN_NBR`, `PCI_NBR`, `RSRP_NBR`, `RSRQ_NBR`, and `SINR_NBR`.
+- Added Fiberhome `app_get_airplane` readback in the snapshot.
+
+### Changed
+
+- Huawei login now prefers `/api/webserver/SesTokInfo` and fetches separate tokens for `challenge_login` and `authentication_login`, matching the new Huawei HAR and avoiding `challenge_login` error code `125003`.
+- The Fiberhome UI now asks for username/password instead of a captured `sessionid`.
+- Local capture folders such as `烽火(1)/` are ignored to avoid committing HAR files or temporary login scripts.
+- Bumped Flutter app version to `0.3.1+4` and Python package version to `0.3.1`.
+
+### Verified
+
+- `flutter test`
+- `flutter analyze`
+- `JAVA_HOME=/opt/homebrew/opt/openjdk@17 flutter build apk --debug`
+- `JAVA_HOME=/opt/homebrew/opt/openjdk@17 flutter build apk --release`
+- `conda run -n cpemanager python -m unittest discover -s tests`
+- `conda run -n cpemanager python -m compileall -q src tests cpe_login.py cpe_signal.py cpe_nbr.py cpe_lock.py cpe_netmode.py cpe_antenna.py tools/build_desktop.py packaging/desktop_entry.py`
+
 ## 0.3.0 - 2026-05-13
 
 Mobile dashboard and Fiberhome device-adapter release.
