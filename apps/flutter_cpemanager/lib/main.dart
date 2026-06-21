@@ -922,42 +922,79 @@ class PccWorkspace extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final compact = constraints.maxWidth < 640;
-        return Column(
-          children: [
-            PrimaryCellCard(model: model),
-            const SizedBox(height: 12),
-            if (compact) ...[
-              SignalQualityPanel(model: model),
-              const SizedBox(height: 12),
-              PowerPanel(model: model),
-              const SizedBox(height: 12),
-              SimInfoPanel(model: model),
-            ] else
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(flex: 3, child: SignalQualityPanel(model: model)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: Column(
-                      children: [
-                        PowerPanel(model: model),
-                        const SizedBox(height: 12),
-                        SimInfoPanel(model: model),
-                      ],
-                    ),
-                  ),
-                ],
+    return Column(
+      children: [
+        PrimaryCellCard(model: model),
+        const SizedBox(height: 12),
+        SignalQualityPanel(model: model),
+        const SizedBox(height: 12),
+        DeviceTrafficPanel(model: model),
+        const SizedBox(height: 12),
+        LinkPanel(model: model),
+      ],
+    );
+  }
+}
+
+class DeviceTrafficPanel extends StatelessWidget {
+  const DeviceTrafficPanel({required this.model, super.key});
+
+  final DashboardModel model;
+
+  @override
+  Widget build(BuildContext context) {
+    return Surface(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SectionTitle(title: '设备 & 流量'),
+          const SizedBox(height: 12),
+          _InfoRow(label: '设备型号', value: model.subtitle.split('/').first.trim()),
+          _InfoRow(label: '软件版本', value: model.identityItems.length > 3 ? model.identityItems[3].value : '--'),
+          const Divider(height: 20, color: CpeColors.border),
+          for (final item in model.trafficItems)
+            _InfoRow(label: item.label, value: item.value),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: CpeColors.muted,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
               ),
-            const SizedBox(height: 12),
-            LinkPanel(model: model),
-          ],
-        );
-      },
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                color: CpeColors.ink,
+                fontWeight: FontWeight.w800,
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1226,41 +1263,65 @@ class PrimaryCellCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Surface(
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: CpeColors.cardBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: CpeColors.border),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      model.headerTitle,
-                      style:
-                          Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                fontWeight: FontWeight.w900,
-                                color: CpeColors.ink,
-                              ),
+          // CPE++ style header badge
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: CpeColors.accent.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: CpeColors.accent.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    model.modeBadge + '  ' + model.operatorBadge,
+                    style: const TextStyle(
+                      color: CpeColors.ink,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 15,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      model.subtitle,
-                      style: const TextStyle(
-                        color: CpeColors.muted,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-              StatusChip(label: model.modeBadge, strong: true),
-            ],
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: model.rrcBadge.contains('正常')
+                        ? CpeColors.good.withValues(alpha: 0.2)
+                        : CpeColors.warn.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    model.rrcBadge,
+                    style: TextStyle(
+                      color: model.rrcBadge.contains('正常')
+                          ? CpeColors.good
+                          : CpeColors.warn,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 14),
+          // Primary metrics grid
           DenseKvGrid(items: model.primaryItems),
           const SizedBox(height: 12),
+          // Identity metrics grid
           DenseKvGrid(items: model.identityItems, compact: true),
         ],
       ),
@@ -1279,13 +1340,19 @@ class SignalQualityPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionTitle(title: '射频质量'),
-          const SizedBox(height: 12),
+          const SectionTitle(title: '信号质量'),
+          const SizedBox(height: 10),
           for (final item in model.signalBars) ...[
             MetricBar(item: item),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
           ],
-          DenseKvGrid(items: model.modulationItems, compact: true),
+          if (model.modulationItems.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const Divider(height: 1, color: CpeColors.border),
+            const SizedBox(height: 10),
+            for (final item in model.modulationItems)
+              _InfoRow(label: item.label, value: item.value),
+          ],
         ],
       ),
     );
@@ -1503,42 +1570,35 @@ class KvTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: item.highlight ? CpeColors.tileAccent : CpeColors.tile,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: CpeColors.border),
+        border: Border.all(color: CpeColors.border.withValues(alpha: 0.5)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
             item.label,
-            maxLines: 2,
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: CpeColors.muted,
-              fontWeight: FontWeight.w700,
-              fontSize: 12.5,
-              height: 1.15,
+              fontWeight: FontWeight.w600,
+              fontSize: 11,
             ),
           ),
-          const Spacer(),
-          SizedBox(
-            width: double.infinity,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Text(
-                item.value,
-                maxLines: 1,
-                style: const TextStyle(
-                  color: CpeColors.ink,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 20,
-                  height: 1.08,
-                ),
-              ),
+          const SizedBox(height: 4),
+          Text(
+            item.value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: CpeColors.ink,
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
             ),
           ),
         ],
@@ -1555,7 +1615,7 @@ class MetricBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: CpeColors.tile,
         borderRadius: BorderRadius.circular(8),
@@ -1563,29 +1623,31 @@ class MetricBar extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 58,
+            width: 52,
             child: Text(
               item.label,
               style: const TextStyle(
-                color: CpeColors.ink,
+                color: CpeColors.muted,
                 fontWeight: FontWeight.w700,
+                fontSize: 13,
               ),
             ),
           ),
+          const SizedBox(width: 8),
           Expanded(
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(999),
+              borderRadius: BorderRadius.circular(6),
               child: LinearProgressIndicator(
                 value: item.progress,
-                minHeight: 18,
+                minHeight: 14,
                 backgroundColor: CpeColors.input,
                 valueColor: AlwaysStoppedAnimation(item.color),
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 12),
           SizedBox(
-            width: 62,
+            width: 58,
             child: Text(
               item.value,
               textAlign: TextAlign.right,
@@ -1594,6 +1656,7 @@ class MetricBar extends StatelessWidget {
               style: const TextStyle(
                 color: CpeColors.ink,
                 fontWeight: FontWeight.w900,
+                fontSize: 14,
               ),
             ),
           ),
@@ -2456,25 +2519,29 @@ class BarItem {
 }
 
 class CpeColors {
-  static const background = Color(0xff0f1217);
-  static const surface = Color(0xff171c23);
-  static const panel = Color(0xff121821);
-  static const input = Color(0xff202733);
-  static const tile = Color(0xff1d2430);
-  static const tileAccent = Color(0xff26364a);
-  static const border = Color(0xff303846);
-  static const primary = Color(0xff8fb3ff);
-  static const ink = Color(0xfff5f7fb);
-  static const muted = Color(0xff9ba7b8);
-  static const good = Color(0xff49d184);
-  static const warn = Color(0xffffc857);
-  static const notice = Color(0xff2b2414);
-  static const noticeBorder = Color(0xff77622a);
-  static const noticeText = Color(0xffffd66b);
-  static const error = Color(0xff33171d);
-  static const errorBorder = Color(0xff7f2a3a);
-  static const errorText = Color(0xffff9bad);
-  static const shadow = Color(0x66000000);
+  static const background = Color(0xff0d1117);
+  static const surface = Color(0xff161b22);
+  static const panel = Color(0xff0d1117);
+  static const input = Color(0xff21262d);
+  static const tile = Color(0xff1c2128);
+  static const tileAccent = Color(0xff253042);
+  static const border = Color(0xff30363d);
+  static const primary = Color(0xff58a6ff);
+  static const ink = Color(0xffe6edf3);
+  static const muted = Color(0xff8b949e);
+  static const good = Color(0xff3fb950);
+  static const warn = Color(0xffd29922);
+  static const notice = Color(0xff2d1b00);
+  static const noticeBorder = Color(0xff5a3e00);
+  static const noticeText = Color(0xffe3b341);
+  static const error = Color(0xff3d1117);
+  static const errorBorder = Color(0xff6e2229);
+  static const errorText = Color(0xffff7b72);
+  static const shadow = Color(0x44000000);
+  // CPE++ specific
+  static const accent = Color(0xff1f6feb);
+  static const accentLight = Color(0xff388bfd);
+  static const cardBg = Color(0xff161b22);
 }
 
 Map<String, String> mapAt(Map<String, dynamic>? value, String key) {
