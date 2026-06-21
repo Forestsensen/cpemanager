@@ -1265,7 +1265,7 @@ class PrimaryCellCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: CpeColors.cardBg,
         borderRadius: BorderRadius.circular(12),
@@ -1274,14 +1274,13 @@ class PrimaryCellCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // CPE++ style header badge
+          // Header badge
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: CpeColors.accent.withValues(alpha: 0.15),
+              color: CpeColors.accent.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: CpeColors.accent.withValues(alpha: 0.3)),
             ),
             child: Row(
               children: [
@@ -1296,12 +1295,12 @@ class PrimaryCellCard extends StatelessWidget {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: model.rrcBadge.contains('正常')
                         ? CpeColors.good.withValues(alpha: 0.2)
                         : CpeColors.warn.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
                     model.rrcBadge,
@@ -1310,19 +1309,61 @@ class PrimaryCellCard extends StatelessWidget {
                           ? CpeColors.good
                           : CpeColors.warn,
                       fontWeight: FontWeight.w700,
-                      fontSize: 12,
+                      fontSize: 11,
                     ),
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 14),
-          // Primary metrics grid
-          DenseKvGrid(items: model.primaryItems),
           const SizedBox(height: 12),
-          // Identity metrics grid
-          DenseKvGrid(items: model.identityItems, compact: true),
+          // Primary metrics - list style like CPE++
+          for (final item in model.primaryItems)
+            _MetricRow(label: item.label, value: item.value),
+          const Divider(height: 16, color: CpeColors.border),
+          // Identity metrics - list style
+          for (final item in model.identityItems)
+            _MetricRow(label: item.label, value: item.value, compact: true),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetricRow extends StatelessWidget {
+  const _MetricRow({required this.label, required this.value, this.compact = false});
+
+  final String label;
+  final String value;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: compact ? 3 : 5),
+      child: Row(
+        children: [
+          SizedBox(
+            width: compact ? 90 : 100,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: CpeColors.muted,
+                fontWeight: FontWeight.w600,
+                fontSize: compact ? 12 : 13,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                color: CpeColors.ink,
+                fontWeight: FontWeight.w800,
+                fontSize: compact ? 13 : 14,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1342,14 +1383,13 @@ class SignalQualityPanel extends StatelessWidget {
         children: [
           const SectionTitle(title: '信号质量'),
           const SizedBox(height: 10),
-          for (final item in model.signalBars) ...[
+          // Signal bars - compact list like CPE++
+          for (final item in model.signalBars)
             MetricBar(item: item),
-            const SizedBox(height: 8),
-          ],
           if (model.modulationItems.isNotEmpty) ...[
             const SizedBox(height: 8),
             const Divider(height: 1, color: CpeColors.border),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             for (final item in model.modulationItems)
               _InfoRow(label: item.label, value: item.value),
           ],
