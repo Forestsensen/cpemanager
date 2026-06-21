@@ -922,82 +922,410 @@ class PccWorkspace extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        PrimaryCellCard(model: model),
-        const SizedBox(height: 12),
-        SignalQualityPanel(model: model),
-        const SizedBox(height: 12),
-        DeviceTrafficPanel(model: model),
-        const SizedBox(height: 12),
-        LinkPanel(model: model),
-      ],
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Column(
+        children: [
+          // ── 1. 连接情况 (Connection Status) ──
+          _ConnHeader(model: model),
+          const SizedBox(height: 10),
+          // ── 2. 电池状态 (Battery) ──
+          _BatteryRow(model: model),
+          const SizedBox(height: 10),
+          // ── 3. SIM卡AMBR ──
+          _SimAmbrPanel(model: model),
+          const SizedBox(height: 10),
+          // ── 4. 当前小区 (Cell Info) - 2x3 grid ──
+          _SectionCard(
+            title: '当前小区',
+            child: _MetricGrid2x(items: [
+              ...model.primaryItems.take(3),
+              ...model.identityItems.take(3),
+            ]),
+          ),
+          const SizedBox(height: 10),
+          // ── 5. 射频质量 (RF Quality) - 2x3 grid with bars ──
+          _SectionCard(
+            title: '射频质量',
+            child: _RfGrid(items: model.signalBars),
+          ),
+          const SizedBox(height: 10),
+          // ── 6. 当前功率 (Power) - grid ──
+          _SectionCard(
+            title: '当前功率',
+            child: _PowerGrid(model: model),
+          ),
+          const SizedBox(height: 10),
+          // ── 7. 链路信息 (Link Info) - 2 columns ──
+          _LinkInfoRow(model: model),
+          const SizedBox(height: 10),
+          // ── 8. 设备信息 (Device & Traffic) - 2 column grid ──
+          _SectionCard(title: '设备信息', child: _DeviceGrid(model: model)),
+          const SizedBox(height: 80), // bottom nav space
+        ],
+      ),
     );
   }
 }
 
-class DeviceTrafficPanel extends StatelessWidget {
-  const DeviceTrafficPanel({required this.model, super.key});
+// ════════════════════════════════════════════════
+// CPE++ Layout Components
+// ════════════════════════════════════════════════
 
+/// Section card container
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({this.title, required this.child});
+  final String? title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: CpeColors.surface,
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: CpeColors.border),
+    ),
+    child: title != null
+        ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title!, style: const TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w700, fontSize: 14)),
+            const SizedBox(height: 10),
+            child,
+          ])
+        : child,
+  );
+}
+
+/// 1. Connection Header - 标题 + RRC/模式/运营商徽章 + 刷新按钮
+class _ConnHeader extends StatelessWidget {
+  const _ConnHeader({required this.model});
+  final DashboardModel model;
+
+  Color get _rrcClr => model.rrcBadge.contains('正常') ? const Color(0xffc17702) : CpeColors.danger;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+    decoration: BoxDecoration(
+      color: CpeColors.surface,
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: CpeColors.border),
+    ),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        const Text('连接情况', style: TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w800, fontSize: 15)),
+        const Spacer(),
+        GestureDetector(
+          onTap: () {},
+          child: Text('刷新', style: TextStyle(color: CpeColors.accent.withValues(alpha: 0.7), fontWeight: FontWeight.w600, fontSize: 13)),
+        ),
+      ]),
+      const SizedBox(height: 10),
+      Wrap(spacing: 6, runSpacing: 6, children: [
+        _Badge(text: model.rrcBadge, color: _rrcClr),
+        _Badge(text: model.modeBadge, color: const Color(0xff4493f5)),
+        _Badge(text: model.operatorBadge, color: CpeColors.muted),
+      ]),
+    ]),
+  );
+}
+
+class _Badge extends StatelessWidget {
+  const _Badge({required this.text, required this.color});
+  final String text; final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.15),
+      borderRadius: BorderRadius.circular(4),
+      border: Border.all(color: color.withValues(alpha: 0.3)),
+    ),
+    child: Text(text, style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 11)),
+  );
+}
+
+/// 2. Battery row - two equal cards
+class _BatteryRow extends StatelessWidget {
+  const _BatteryRow({required this.model});
   final DashboardModel model;
 
   @override
-  Widget build(BuildContext context) {
-    return Surface(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SectionTitle(title: '设备 & 流量'),
-          const SizedBox(height: 12),
-          _InfoRow(label: '设备型号', value: model.subtitle.split('/').first.trim()),
-          _InfoRow(label: '软件版本', value: model.identityItems.length > 3 ? model.identityItems[3].value : '--'),
-          const Divider(height: 20, color: CpeColors.border),
-          for (final item in model.trafficItems)
-            _InfoRow(label: item.label, value: item.value),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => _SectionCard(
+    title: '电池状态',
+    child: Row(children: [
+      Expanded(child: _BatTile(label: '电池电量', value: '--%')),
+      const SizedBox(width: 10),
+      Expanded(child: _BatTile(label: '当前状态', value: '--')),
+    ]),
+  );
 }
 
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.label, required this.value});
+class _BatTile extends StatelessWidget {
+  const _BatTile({required this.label, required this.value});
+  final String label; final String value;
 
-  final String label;
-  final String value;
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+    decoration: BoxDecoration(color: CpeColors.tile, borderRadius: BorderRadius.circular(8)),
+    child: Column(children: [
+      Text(label, style: const TextStyle(color: CpeColors.muted, fontSize: 11, fontWeight: FontWeight.w600)),
+      const SizedBox(height: 6),
+      Text(value, style: const TextStyle(color: CpeColors.ink, fontSize: 18, fontWeight: FontWeight.w900)),
+    ]),
+  );
+}
+
+/// 3. SIM AMBR panel
+class _SimAmbrPanel extends StatelessWidget {
+  const _SimAmbrPanel({required this.model});
+  final DashboardModel model;
+
+  @override
+  Widget build(BuildContext context) => _SectionCard(
+    child: Row(children: [
+      Text('SIM卡AMBR', style: const TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w700, fontSize: 14)),
+      const Spacer(),
+      GestureDetector(
+        onTap: () {},
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          decoration: BoxDecoration(color: CpeColors.accent.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(16)),
+          child: Text('获取', style: TextStyle(color: CpeColors.accent, fontWeight: FontWeight.w600, fontSize: 12)),
+        ),
+      ),
+    ]),
+  );
+}
+
+/// 4. Metric tile (label top, value bottom)
+class _MetricTile extends StatelessWidget {
+  const _MetricTile({required this.label, required this.value});
+  final String label; final String value;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+    decoration: BoxDecoration(color: CpeColors.tile, borderRadius: BorderRadius.circular(8)),
+    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+      Text(label, style: const TextStyle(color: CpeColors.muted, fontSize: 11, fontWeight: FontWeight.w600)),
+      const SizedBox(height: 4),
+      Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: CpeColors.ink, fontSize: 14, fontWeight: FontWeight.w900)),
+    ]),
+  );
+}
+
+/// 2-column metric grid using KvItem data
+class _MetricGrid2x extends StatelessWidget {
+  const _MetricGrid2x({required this.items});
+  final List<KvItem> items;
+
+  @override
+  Widget build(BuildContext context) => GridView.builder(
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
+    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+      crossAxisCount: 2,
+      crossAxisSpacing: 8,
+      mainAxisSpacing: 8,
+      mainAxisExtent: 56,
+    ),
+    itemCount: items.length,
+    itemBuilder: (_, i) => _MetricTile(label: items[i].label, value: items[i].value),
+  );
+}
+
+/// 5. RF Quality grid - tiles with colored progress bar under value
+class _RfGrid extends StatelessWidget {
+  const _RfGrid({required this.items});
+  final List<BarItem> items;
+
+  @override
+  Widget build(BuildContext context) => GridView.builder(
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
+    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+      crossAxisCount: 2,
+      crossAxisSpacing: 8,
+      mainAxisSpacing: 8,
+      mainAxisExtent: 64,
+    ),
+    itemCount: items.length,
+    itemBuilder: (_, i) => _RfTile(item: items[i]),
+  );
+}
+
+class _RfTile extends StatelessWidget {
+  const _RfTile({required this.item});
+  final BarItem item;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+    decoration: BoxDecoration(color: CpeColors.tile, borderRadius: BorderRadius.circular(8)),
+    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+      Text(item.label, style: const TextStyle(color: CpeColors.muted, fontSize: 11, fontWeight: FontWeight.w600)),
+      const SizedBox(height: 3),
+      Text(item.value, style: TextStyle(color: item.color, fontSize: 16, fontWeight: FontWeight.w900)),
+      const SizedBox(height: 4),
+      ClipRRect(
+        borderRadius: BorderRadius.circular(2),
+        child: LinearProgressIndicator(
+          value: item.progress, minHeight: 3,
+          backgroundColor: CpeColors.input,
+          valueColor: AlwaysStoppedAnimation(item.color),
+        ),
+      ),
+    ]),
+  );
+}
+
+/// 6. Power grid - dBm values with color coding
+class _PowerGrid extends StatelessWidget {
+  const _PowerGrid({required this.model});
+  final DashboardModel model;
+
+  static Color _powerColor(String val) {
+    if (!val.contains('dBm')) return CpeColors.ink;
+    final n = double.tryParse(val.replaceAll(RegExp(r'[^\d.\-]'), '')) ?? 0;
+    if (n >= 23) return const Color(0xffe74c3c);
+    if (n >= 18) return const Color(0xffe67e22);
+    if (n >= 12) return const Color(0xffd4a017);
+    return const Color(0xff30a14e);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 100,
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: CpeColors.muted,
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                color: CpeColors.ink,
-                fontWeight: FontWeight.w800,
-                fontSize: 14,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    final base = model.powerItems.map((e) => e).toList();
+    while (base.length < 4) base.add(KvItem('--', '--'));
+    return Wrap(spacing: 8, runSpacing: 8, children: [
+      for (final item in base)
+        SizedBox(width: 90, child: _PTile(label: item.label, value: item.value)),
+      // BW + TM placeholders
+      _PTile(label: 'DL BW', value: '--'),
+      _PTile(label: 'UL BW', value: '--'),
+      _PTile(label: 'TM', value: '--'),
+    ]);
   }
 }
+
+class _PTile extends StatelessWidget {
+  const _PTile({required this.label, required this.value});
+  final String label; final String value;
+
+  Color get c {
+    if (!value.contains('dBm') && !value.startsWith('TM')) return CpeColors.ink;
+    final n = double.tryParse(value.replaceAll(RegExp(r'[^\d.\-]'), '')) ?? 0;
+    if (n >= 23) return const Color(0xffe74c3c);
+    if (n >= 18) return const Color(0xffe67e22);
+    if (n >= 12) return const Color(0xffd4a017);
+    return const Color(0xff30a14e);
+  }
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+    decoration: BoxDecoration(color: CpeColors.tile, borderRadius: BorderRadius.circular(8)),
+    child: Column(children: [
+      Text(label, style: const TextStyle(color: CpeColors.muted, fontSize: 10, fontWeight: FontWeight.w600)),
+      const SizedBox(height: 3),
+      Text(value, style: TextStyle(color: c, fontSize: 13, fontWeight: FontWeight.w900)),
+    ]),
+  );
+}
+
+/// 7. Link info - downlink/uplink side by side
+class _LinkInfoRow extends StatelessWidget {
+  const _LinkInfoRow({required this.model});
+  final DashboardModel model;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Expanded(child: _SectionCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('下行链路', style: TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w700, fontSize: 13)),
+        const SizedBox(height: 8),
+        for (final it in model.downlinkItems.take(2)) Padding(padding: const EdgeInsets.only(bottom: 3), child: _ILine(it)),
+      ]))),
+      const SizedBox(width: 10),
+      Expanded(child: _SectionCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('上行链路', style: TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w700, fontSize: 13)),
+        const SizedBox(height: 8),
+        for (final it in model.uplinkItems.take(2)) Padding(padding: const EdgeInsets.only(bottom: 3), child: _ILine(it)),
+      ]))),
+    ],
+  );
+}
+
+class _ILine extends StatelessWidget {
+  const _ILine(this.item);
+  final KvItem item;
+
+  @override
+  Widget build(BuildContext context) => Row(children: [
+    Text(item.label, style: const TextStyle(color: CpeColors.muted, fontSize: 12, fontWeight: FontWeight.w600)),
+    const Spacer(),
+    Text(item.value, style: const TextStyle(color: CpeColors.ink, fontSize: 12, fontWeight: FontWeight.w800)),
+  ]);
+}
+
+/// 8. Device info grid - dense 2-column rows matching CPE++ screenshot
+class _DeviceGrid extends StatelessWidget {
+  const _DeviceGrid({required this.model});
+  final DashboardModel model;
+
+  List<_DI> get _rows {
+    final r = <_DI>[];
+    r.add(_DI('设备型号', model.subtitle.split('/').first.trim()));
+    r.add(_DI('WLAN接入', '--'));
+    r.add(_DI('当日流量', model.trafficItems.isNotEmpty ? model.trafficItems[0].value : '--'));
+    r.add(_DI('软件版本', model.identityItems.length > 3 ? model.identityItems[3].value : '--'));
+    r.add(_DI('上次空口日期', '--'));
+    r.add(_DI('下载速率', model.downloadRate));
+    r.add(_DI('上传速率', model.uploadRate));
+    r.add(_DI('本次下载', model.trafficItems.length > 3 ? model.trafficItems[3].value : '--'));
+    r.add(_DI('本次上传', model.trafficItems.length > 4 ? model.trafficItems[4].value : '--'));
+    r.add(_DI('当月下载', model.vendor == CpeVendor.fiberhome && model.trafficItems.length > 4 ? model.trafficItems[4].value : '--'));
+    r.add(_DI('当月上传', model.vendor == CpeVendor.fiberhome && model.trafficItems.length > 5 ? model.trafficItems[5].value : '--'));
+    r.add(_DI('累计连接', model.trafficItems.length > 2 ? model.trafficItems[2].value : '--'));
+    r.add(_DI('本次连接', '--'));
+    return r;
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(children: [
+    for (int i = 0; i < _rows.length; i += 2)
+      Padding(
+        padding: EdgeInsets.only(bottom: i < _rows.length - 2 ? 4 : 0),
+        child: Row(children: [
+          Expanded(child: _DITile(l: _rows[i].k, v: _rows[i].v)),
+          const SizedBox(width: 10),
+          Expanded(child: _DITile(l: i + 1 < _rows.length ? _rows[i + 1].k : '', v: i + 1 < _rows.length ? _rows[i + 1].v : '')),
+        ]),
+      ),
+  ]);
+}
+
+class _DI { const _DI(this.k, this.v); final String k, v; }
+
+class _DITile extends StatelessWidget {
+  const _DITile({required this.l, required this.v});
+  final String l, v;
+
+  @override
+  Widget build(BuildContext context) => l.isEmpty ? const SizedBox.shrink()
+      : Row(children: [
+        Text(l, style: const TextStyle(color: CpeColors.muted, fontSize: 11.5, fontWeight: FontWeight.w600)),
+        const Spacer(), Text(v, style: const TextStyle(color: CpeColors.ink, fontSize: 11.5, fontWeight: FontWeight.w800)),
+      ]);
+}
+
 
 class CarrierWorkspace extends StatelessWidget {
   const CarrierWorkspace({required this.model, super.key});
@@ -1256,147 +1584,28 @@ class SpeedWorkspace extends StatelessWidget {
   }
 }
 
+// Replaced by _ConnectionHeader inside PccWorkspace
+@Deprecated('Use _ConnectionHeader instead')
 class PrimaryCellCard extends StatelessWidget {
   const PrimaryCellCard({required this.model, super.key});
-
   final DashboardModel model;
-
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: CpeColors.cardBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: CpeColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header badge
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: CpeColors.accent.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    model.modeBadge + '  ' + model.operatorBadge,
-                    style: const TextStyle(
-                      color: CpeColors.ink,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 15,
-                    ),
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: model.rrcBadge.contains('正常')
-                        ? CpeColors.good.withValues(alpha: 0.2)
-                        : CpeColors.warn.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    model.rrcBadge,
-                    style: TextStyle(
-                      color: model.rrcBadge.contains('正常')
-                          ? CpeColors.good
-                          : CpeColors.warn,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 11,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          // Primary metrics - list style like CPE++
-          for (final item in model.primaryItems)
-            _MetricRow(label: item.label, value: item.value),
-          const Divider(height: 16, color: CpeColors.border),
-          // Identity metrics - list style
-          for (final item in model.identityItems)
-            _MetricRow(label: item.label, value: item.value, compact: true),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
+@Deprecated('Use _MetricTile instead')
 class _MetricRow extends StatelessWidget {
   const _MetricRow({required this.label, required this.value, this.compact = false});
-
-  final String label;
-  final String value;
-  final bool compact;
-
+  final String label; final String value; final bool compact;
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: compact ? 3 : 5),
-      child: Row(
-        children: [
-          SizedBox(
-            width: compact ? 90 : 100,
-            child: Text(
-              label,
-              style: TextStyle(
-                color: CpeColors.muted,
-                fontWeight: FontWeight.w600,
-                fontSize: compact ? 12 : 13,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: TextStyle(
-                color: CpeColors.ink,
-                fontWeight: FontWeight.w800,
-                fontSize: compact ? 13 : 14,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
-
+@Deprecated('Use _RfQualityGrid inside PccWorkspace instead')
 class SignalQualityPanel extends StatelessWidget {
   const SignalQualityPanel({required this.model, super.key});
-
   final DashboardModel model;
-
   @override
-  Widget build(BuildContext context) {
-    return Surface(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SectionTitle(title: '信号质量'),
-          const SizedBox(height: 10),
-          // Signal bars - compact list like CPE++
-          for (final item in model.signalBars)
-            MetricBar(item: item),
-          if (model.modulationItems.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            const Divider(height: 1, color: CpeColors.border),
-            const SizedBox(height: 8),
-            for (final item in model.modulationItems)
-              _InfoRow(label: item.label, value: item.value),
-          ],
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
 class SimInfoPanel extends StatelessWidget {
@@ -1419,79 +1628,20 @@ class SimInfoPanel extends StatelessWidget {
   }
 }
 
+@Deprecated('Use _PowerGrid inside PccWorkspace instead')
 class PowerPanel extends StatelessWidget {
   const PowerPanel({required this.model, super.key});
-
   final DashboardModel model;
-
   @override
-  Widget build(BuildContext context) {
-    return Surface(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SectionTitle(title: '上行功率'),
-          const SizedBox(height: 12),
-          for (final item in model.powerItems) ...[
-            PowerRow(label: item.label, value: item.value),
-            const SizedBox(height: 8),
-          ],
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
+@Deprecated('Use _LinkPanels inside PccWorkspace instead')
 class LinkPanel extends StatelessWidget {
   const LinkPanel({required this.model, super.key});
-
   final DashboardModel model;
-
   @override
-  Widget build(BuildContext context) {
-    return Surface(
-      tinted: true,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 520;
-          final downlink = MiniPanel(title: '下行链路', items: model.downlinkItems);
-          final uplink = MiniPanel(title: '上行链路', items: model.uplinkItems);
-          final download = SpeedTile(label: '下载速率', value: model.downloadRate);
-          final upload = SpeedTile(label: '上传速率', value: model.uploadRate);
-          return Column(
-            children: [
-              if (compact) ...[
-                downlink,
-                const SizedBox(height: 12),
-                uplink,
-              ] else
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: downlink),
-                    const SizedBox(width: 12),
-                    Expanded(child: uplink),
-                  ],
-                ),
-              const SizedBox(height: 12),
-              if (compact) ...[
-                download,
-                const SizedBox(height: 12),
-                upload,
-              ] else
-                Row(
-                  children: [
-                    Expanded(child: download),
-                    const SizedBox(width: 12),
-                    Expanded(child: upload),
-                  ],
-                ),
-            ],
-          );
-        },
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
 class TrafficPanel extends StatelessWidget {
@@ -2116,31 +2266,17 @@ class Surface extends StatelessWidget {
 
 class SectionTitle extends StatelessWidget {
   const SectionTitle({required this.title, super.key});
-
   final String title;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 3,
-          height: 16,
-          decoration: BoxDecoration(
-            color: CpeColors.accent,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          title,
-          style: const TextStyle(
-            color: CpeColors.ink,
-            fontWeight: FontWeight.w800,
-            fontSize: 15,
-          ),
-        ),
-      ],
+    return Text(
+      title,
+      style: const TextStyle(
+        color: CpeColors.ink,
+        fontWeight: FontWeight.w700,
+        fontSize: 14,
+      ),
     );
   }
 }
@@ -2572,29 +2708,35 @@ class BarItem {
 }
 
 class CpeColors {
-  static const background = Color(0xff0d1117);
-  static const surface = Color(0xff161b22);
-  static const panel = Color(0xff0d1117);
-  static const input = Color(0xff21262d);
-  static const tile = Color(0xff1c2128);
-  static const tileAccent = Color(0xff253042);
-  static const border = Color(0xff30363d);
-  static const primary = Color(0xff58a6ff);
-  static const ink = Color(0xffe6edf3);
-  static const muted = Color(0xff8b949e);
-  static const good = Color(0xff3fb950);
-  static const warn = Color(0xffd29922);
+  // CPE++ dark theme from screenshot
+  static const background = Color(0xff0a0d12);      // deep navy bg
+  static const surface = Color(0xff111620);         // card surface
+  static const panel = Color(0xff111620);           // same as surface
+  static const input = Color(0xff1a2030);           // input fields
+  static const tile = Color(0xff161d2a);            // metric tile bg
+  static const tileAccent = Color(0xff1e2838);      // highlighted tile
+  static const border = Color(0xff252d3a);          // subtle borders
+  static const primary = Color(0xff4493f5);         // blue accent
+  static const ink = Color(0xffe0e6ed);             // main text
+  static const muted = Color(0xff7a869a);           // secondary text
+  static const good = Color(0xff30a14e);            // green (good signal)
+  static const warn = Color(0xffd4a017);            // yellow/orange
+  static const danger = Color(0xffe74c3c);          // red (bad/high power)
+  static const orange = Color(0xffe67e22);          // medium power
   static const notice = Color(0xff2d1b00);
   static const noticeBorder = Color(0xff5a3e00);
   static const noticeText = Color(0xffe3b341);
   static const error = Color(0xff3d1117);
   static const errorBorder = Color(0xff6e2229);
   static const errorText = Color(0xffff7b72);
-  static const shadow = Color(0x44000000);
-  // CPE++ specific
-  static const accent = Color(0xff1f6feb);
-  static const accentLight = Color(0xff388bfd);
-  static const cardBg = Color(0xff161b22);
+  static const shadow = Color(0x33000000);
+  // CPE++ accent
+  static const accent = Color(0xff4493f5);
+  static const accentLight = Color(0xff66a8ff);
+  static const cardBg = Color(0xff111620);
+  // Badge colors
+  static const badgeRrc = Color(0xffc17702);        // brown/orange for RRC
+  static const badgeMode = Color(0xff4493f5);       // blue for mode
 }
 
 Map<String, String> mapAt(Map<String, dynamic>? value, String key) {
