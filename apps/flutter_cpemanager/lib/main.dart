@@ -618,6 +618,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         usernameController: usernameController,
                         passwordController: passwordController,
                         onRead: busy ? null : () { _saveCredentials(); refreshSnapshot(); },
+                        rawOutput: rawOutput,
                       ),
                     ],
                   ),
@@ -901,6 +902,7 @@ class LoginWorkspace extends StatelessWidget {
     required this.usernameController,
     required this.passwordController,
     required this.onRead,
+    this.rawOutput = '',
     super.key,
   });
 
@@ -909,6 +911,7 @@ class LoginWorkspace extends StatelessWidget {
   final TextEditingController usernameController;
   final TextEditingController passwordController;
   final VoidCallback? onRead;
+  final String rawOutput;
 
   @override
   Widget build(BuildContext context) {
@@ -972,6 +975,22 @@ class LoginWorkspace extends StatelessWidget {
           body:
               '${profile.title} · ${profile.protocol}。后续新增设备时会继续放进这个档案选择器，不需要改变登录流程。',
         ),
+        // Raw snapshot JSON
+        if (rawOutput.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _SectionCard(
+            title: '原始快照 JSON',
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 400),
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  rawOutput,
+                  style: TextStyle(fontFamily: 'monospace', fontSize: 11, height: 1.4, color: CpeColors.muted),
+                ),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -1174,18 +1193,20 @@ class _SimAmbrPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => _SectionCard(
-    child: Row(children: [
-      Text('SIM卡AMBR', style: TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w700, fontSize: 14)),
-      const Spacer(),
-      GestureDetector(
-        onTap: () {},
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          decoration: BoxDecoration(color: CpeColors.accent.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(16)),
-          child: Text('获取', style: TextStyle(color: CpeColors.accent, fontWeight: FontWeight.w600, fontSize: 12)),
-        ),
-      ),
-    ]),
+    title: 'SIM卡AMBR',
+    child: model.simItems.isEmpty
+        ? Text('--', style: TextStyle(color: CpeColors.muted, fontSize: 12))
+        : Column(children: [
+            for (final item in model.simItems)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(children: [
+                  Text(item.label, style: TextStyle(color: CpeColors.muted, fontSize: 12, fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  Text(item.value, style: TextStyle(color: CpeColors.ink, fontSize: 12, fontWeight: FontWeight.w800)),
+                ]),
+              ),
+          ]),
   );
 }
 
@@ -1370,11 +1391,11 @@ class _DeviceGrid extends StatelessWidget {
   String get _deviceModel => model.subtitle.split('/').first.trim();
   String get _swVersion => model.identityItems.length > 3 ? model.identityItems[3].value : '--';
   String get _temperature {
-    for (final item in model.trafficItems) {
-      if (item.label.toLowerCase().contains('temp')) return formatTemperature(item.value);
-    }
     for (final item in model.identityItems) {
-      if (item.label.toLowerCase().contains('temp')) return formatTemperature(item.value);
+      if (item.label.toLowerCase().contains('temp') || item.label.contains('温')) return formatTemperature(item.value);
+    }
+    for (final item in model.trafficItems) {
+      if (item.label.toLowerCase().contains('temp') || item.label.contains('温')) return formatTemperature(item.value);
     }
     return '--';
   }
@@ -1399,25 +1420,18 @@ class _DeviceGrid extends StatelessWidget {
         Expanded(child: _DITile(l: '上传速率', v: model.uploadRate)),
       ]),
       const SizedBox(height: 8),
-      // Row 3
+      // Row 3: 当日下载/上传 (index 2,3)
       Row(children: [
-        Expanded(child: _DITile(l: '当日下载', v: model.trafficItems.isNotEmpty ? formatBytes(model.trafficItems[0].value) : '--')),
+        Expanded(child: _DITile(l: '当日下载', v: model.trafficItems.length > 2 ? formatBytes(model.trafficItems[2].value) : '--')),
         const SizedBox(width: 8),
-        Expanded(child: _DITile(l: '当日上传', v: model.trafficItems.length > 1 ? formatBytes(model.trafficItems[1].value) : '--')),
+        Expanded(child: _DITile(l: '当日上传', v: model.trafficItems.length > 3 ? formatBytes(model.trafficItems[3].value) : '--')),
       ]),
       const SizedBox(height: 8),
-      // Row 4
+      // Row 4: 当月下载/上传 (index 4,5)
       Row(children: [
-        Expanded(child: _DITile(l: '当月下载', v: model.vendor == CpeVendor.fiberhome && model.trafficItems.length > 4 ? formatBytes(model.trafficItems[4].value) : '--')),
+        Expanded(child: _DITile(l: '当月下载', v: model.trafficItems.length > 4 ? formatBytes(model.trafficItems[4].value) : '--')),
         const SizedBox(width: 8),
-        Expanded(child: _DITile(l: '当月上传', v: model.vendor == CpeVendor.fiberhome && model.trafficItems.length > 5 ? formatBytes(model.trafficItems[5].value) : '--')),
-      ]),
-      const SizedBox(height: 8),
-      // Row 5
-      Row(children: [
-        Expanded(child: _DITile(l: '系统运行时长', v: model.trafficItems.length > 2 ? model.trafficItems[2].value : '--')),
-        const SizedBox(width: 8),
-        Expanded(child: _DITile(l: '当前上网时长', v: '--')),
+        Expanded(child: _DITile(l: '当月上传', v: model.trafficItems.length > 5 ? formatBytes(model.trafficItems[5].value) : '--')),
       ]),
     ],
   );
