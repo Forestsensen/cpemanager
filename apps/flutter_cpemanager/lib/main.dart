@@ -34,9 +34,9 @@ enum DisplayMode {
 }
 
 enum AppThemeMode {
-  system('跟随系统', Icons.brightness_auto),
-  light('浅色模式', Icons.light_mode),
-  dark('深色模式', Icons.dark_mode);
+  system('跟随系统', Icons.brightness_6),
+  light('浅色模式', Icons.wb_sunny),
+  dark('深色模式', Icons.nights_stay);
 
   const AppThemeMode(this.label, this.icon);
   final String label;
