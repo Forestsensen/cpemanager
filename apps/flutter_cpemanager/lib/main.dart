@@ -154,13 +154,13 @@ class _CpeManagerAppState extends State<CpeManagerApp> {
         colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.light),
         scaffoldBackgroundColor: CpeColors.background,
         useMaterial3: true,
-        fontFamilyFallback: const ['PingFang SC', 'Noto Sans CJK SC'],
+        fontFamilyFallback: ['PingFang SC', 'Noto Sans CJK SC'],
       ),
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark),
         scaffoldBackgroundColor: CpeColors.background,
         useMaterial3: true,
-        fontFamilyFallback: const ['PingFang SC', 'Noto Sans CJK SC'],
+        fontFamilyFallback: ['PingFang SC', 'Noto Sans CJK SC'],
       ),
       builder: (context, child) {
         CpeColors.isDark = Theme.of(context).brightness == Brightness.dark;
@@ -2364,10 +2364,10 @@ class Surface extends StatelessWidget {
         color: tinted ? CpeColors.panel : CpeColors.surface,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: CpeColors.border),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
             blurRadius: 24,
-            offset: Offset(0, 12),
+            offset: const Offset(0, 12),
             color: CpeColors.shadow,
           ),
         ],
