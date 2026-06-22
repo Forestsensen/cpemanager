@@ -924,10 +924,7 @@ class PccWorkspace extends StatelessWidget {
           // ── 1. 连接情况 (Connection Status) ──
           _ConnHeader(model: model),
           const SizedBox(height: 10),
-          // ── 2. 电池状态 (Battery) ──
-          _BatteryRow(model: model),
-          const SizedBox(height: 10),
-          // ── 3. SIM卡AMBR ──
+          // ── 2. SIM卡AMBR ──
           _SimAmbrPanel(model: model),
           const SizedBox(height: 10),
           // ── 4. 当前小区 (Cell Info) - 2x3 grid ──
@@ -1044,35 +1041,6 @@ class _Badge extends StatelessWidget {
 }
 
 /// 2. Battery row - two equal cards
-class _BatteryRow extends StatelessWidget {
-  const _BatteryRow({required this.model});
-  final DashboardModel model;
-
-  @override
-  Widget build(BuildContext context) => _SectionCard(
-    title: '电池状态',
-    child: Row(children: [
-      Expanded(child: _BatTile(label: '电池电量', value: '--%')),
-      const SizedBox(width: 10),
-      Expanded(child: _BatTile(label: '当前状态', value: '--')),
-    ]),
-  );
-}
-
-class _BatTile extends StatelessWidget {
-  const _BatTile({required this.label, required this.value});
-  final String label; final String value;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-    decoration: BoxDecoration(color: CpeColors.tile, borderRadius: BorderRadius.circular(8)),
-    child: Column(children: [
-      Text(label, style: const TextStyle(color: CpeColors.muted, fontSize: 11, fontWeight: FontWeight.w600)),
-      const SizedBox(height: 6),
-      Text(value, style: const TextStyle(color: CpeColors.ink, fontSize: 18, fontWeight: FontWeight.w900)),
-    ]),
-  );
 }
 
 /// 3. SIM AMBR panel
