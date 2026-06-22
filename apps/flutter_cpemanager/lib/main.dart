@@ -155,7 +155,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<File> get _credFile async {
     final dir = await getApplicationDocumentsDirectory();
-    return File('\${dir.path}/cpe_credentials.json');
+    return File('${dir.path}/cpe_credentials.json');
   }
 
   Future<void> _loadSavedCredentials() async {
