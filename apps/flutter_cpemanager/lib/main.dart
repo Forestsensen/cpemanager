@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 
 import 'package:flutter/material.dart';
 
@@ -153,7 +154,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<File> get _credFile async {
-    final dir = Directory.systemTemp;
+    final dir = await getApplicationDocumentsDirectory();
     return File('\${dir.path}/cpe_credentials.json');
   }
 
