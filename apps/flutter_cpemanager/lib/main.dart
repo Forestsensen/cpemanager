@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api/cpe_client.dart';
 import 'api/fiberhome_client.dart';
@@ -152,37 +152,46 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  Future<File> get _credFile async {
+    final dir = Directory.systemTemp;
+    return File('\${dir.path}/cpe_credentials.json');
+  }
+
   Future<void> _loadSavedCredentials() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedHost = prefs.getString('cpe_host');
-    final savedUser = prefs.getString('cpe_username');
-    final savedPass = prefs.getString('cpe_password');
-    final savedVendor = prefs.getString('cpe_vendor');
-    if (savedHost != null && savedHost.isNotEmpty) {
-      hostController.text = savedHost;
-    }
-    if (savedUser != null && savedUser.isNotEmpty) {
-      usernameController.text = savedUser;
-    }
-    if (savedPass != null && savedPass.isNotEmpty) {
-      passwordController.text = savedPass;
-    }
-    if (savedVendor != null) {
-      final match = CpeVendor.values.where((v) => v.code == savedVendor);
-      if (match.isNotEmpty) {
-        setState(() {
-          vendor = match.first;
-        });
+    try {
+      final file = await _credFile;
+      if (!await file.exists()) return;
+      final data = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      if (data['host'] != null && (data['host'] as String).isNotEmpty) {
+        hostController.text = data['host'];
       }
-    }
+      if (data['username'] != null && (data['username'] as String).isNotEmpty) {
+        usernameController.text = data['username'];
+      }
+      if (data['password'] != null && (data['password'] as String).isNotEmpty) {
+        passwordController.text = data['password'];
+      }
+      if (data['vendor'] != null) {
+        final match = CpeVendor.values.where((v) => v.code == data['vendor']);
+        if (match.isNotEmpty) {
+          setState(() {
+            vendor = match.first;
+          });
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _saveCredentials() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('cpe_host', hostController.text.trim());
-    await prefs.setString('cpe_username', usernameController.text.trim());
-    await prefs.setString('cpe_password', passwordController.text);
-    await prefs.setString('cpe_vendor', vendor.code);
+    try {
+      final file = await _credFile;
+      await file.writeAsString(jsonEncode({
+        'host': hostController.text.trim(),
+        'username': usernameController.text.trim(),
+        'password': passwordController.text,
+        'vendor': vendor.code,
+      }));
+    } catch (_) {}
   }
 
   @override
@@ -1281,10 +1290,10 @@ class _DeviceGrid extends StatelessWidget {
   String get _swVersion => model.identityItems.length > 3 ? model.identityItems[3].value : '--';
   String get _temperature {
     for (final item in model.trafficItems) {
-      if (item.k.toLowerCase().contains('temp')) return formatTemperature(item.value);
+      if (item.label.toLowerCase().contains('temp')) return formatTemperature(item.value);
     }
     for (final item in model.identityItems) {
-      if (item.k.toLowerCase().contains('temp')) return formatTemperature(item.value);
+      if (item.label.toLowerCase().contains('temp')) return formatTemperature(item.value);
     }
     return '--';
   }
