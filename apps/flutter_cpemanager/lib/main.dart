@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api/cpe_client.dart';
 import 'api/fiberhome_client.dart';
@@ -12,8 +13,8 @@ void main() {
 }
 
 enum CpeVendor {
-  huawei('Huawei', '华为'),
-  fiberhome('Fiberhome', '烽火');
+  fiberhome('Fiberhome', '烽火'),
+  huawei('Huawei', '华为');
 
   const CpeVendor(this.code, this.label);
 
@@ -49,18 +50,18 @@ class CpeDeviceProfile {
 
 const cpeDeviceProfiles = <CpeDeviceProfile>[
   CpeDeviceProfile(
-    vendor: CpeVendor.huawei,
-    title: '华为 CPE',
-    protocol: 'Huawei XML API',
-    description: '适用于华为/智选类 CPE，使用 challenge_login 和 XML 状态接口。',
-    icon: Icons.router_outlined,
-  ),
-  CpeDeviceProfile(
     vendor: CpeVendor.fiberhome,
     title: '烽火 CPE',
     protocol: 'FHNCAPIS / FHTOOLAPIS',
     description: '适用于烽火 LG61xx 系列，使用 JSON 接口读取信号、SIM 与锁定状态。',
     icon: Icons.hub_outlined,
+  ),
+  CpeDeviceProfile(
+    vendor: CpeVendor.huawei,
+    title: '华为 CPE',
+    protocol: 'Huawei XML API',
+    description: '适用于华为/智选类 CPE，使用 challenge_login 和 XML 状态接口。',
+    icon: Icons.router_outlined,
   ),
 ];
 
@@ -125,7 +126,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final lteLockPciController = TextEditingController();
   final scrollController = ScrollController();
 
-  CpeVendor vendor = CpeVendor.huawei;
+  CpeVendor vendor = CpeVendor.fiberhome;
   DisplayMode displayMode = DisplayMode.simple;
   int tabIndex = 1;
   Map<String, dynamic>? snapshot;
@@ -142,12 +143,46 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _loadSavedCredentials();
     refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted || !autoRefresh || snapshot == null || busy) {
         return;
       }
       unawaited(refreshSnapshot(silent: true));
     });
+  }
+
+  Future<void> _loadSavedCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedHost = prefs.getString('cpe_host');
+    final savedUser = prefs.getString('cpe_username');
+    final savedPass = prefs.getString('cpe_password');
+    final savedVendor = prefs.getString('cpe_vendor');
+    if (savedHost != null && savedHost.isNotEmpty) {
+      hostController.text = savedHost;
+    }
+    if (savedUser != null && savedUser.isNotEmpty) {
+      usernameController.text = savedUser;
+    }
+    if (savedPass != null && savedPass.isNotEmpty) {
+      passwordController.text = savedPass;
+    }
+    if (savedVendor != null) {
+      final match = CpeVendor.values.where((v) => v.code == savedVendor);
+      if (match.isNotEmpty) {
+        setState(() {
+          vendor = match.first;
+        });
+      }
+    }
+  }
+
+  Future<void> _saveCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('cpe_host', hostController.text.trim());
+    await prefs.setString('cpe_username', usernameController.text.trim());
+    await prefs.setString('cpe_password', passwordController.text);
+    await prefs.setString('cpe_vendor', vendor.code);
   }
 
   @override
@@ -250,6 +285,7 @@ class _HomeScreenState extends State<HomeScreen> {
             neighbors = nextNeighbors;
             rawOutput = const JsonEncoder.withIndent('  ').convert(next);
             lastUpdated = DateTime.now();
+          _saveCredentials();
           });
         } else {
           final cpe = fiberhomeClient();
@@ -433,7 +469,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: CustomScrollView(
           controller: scrollController,
           slivers: [
-            if (tabIndex == 0)
+            if (tabIndex == 3)
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
@@ -535,7 +571,7 @@ class _HomeScreenState extends State<HomeScreen> {
           NavigationDestination(
             icon: Icon(Icons.tune),
             selectedIcon: Icon(Icons.tune),
-            label: 'PCC',
+            label: '连接',
           ),
           NavigationDestination(
             icon: Icon(Icons.cell_tower_outlined),
@@ -1241,36 +1277,60 @@ class _DeviceGrid extends StatelessWidget {
   const _DeviceGrid({required this.model});
   final DashboardModel model;
 
-  List<_DI> get _rows {
-    final r = <_DI>[];
-    r.add(_DI('设备型号', model.subtitle.split('/').first.trim()));
-    r.add(_DI('WLAN接入', '--'));
-    r.add(_DI('当日流量', model.trafficItems.isNotEmpty ? model.trafficItems[0].value : '--'));
-    r.add(_DI('软件版本', model.identityItems.length > 3 ? model.identityItems[3].value : '--'));
-    r.add(_DI('上次空口日期', '--'));
-    r.add(_DI('下载速率', model.downloadRate));
-    r.add(_DI('上传速率', model.uploadRate));
-    r.add(_DI('本次下载', model.trafficItems.length > 3 ? model.trafficItems[3].value : '--'));
-    r.add(_DI('本次上传', model.trafficItems.length > 4 ? model.trafficItems[4].value : '--'));
-    r.add(_DI('当月下载', model.vendor == CpeVendor.fiberhome && model.trafficItems.length > 4 ? model.trafficItems[4].value : '--'));
-    r.add(_DI('当月上传', model.vendor == CpeVendor.fiberhome && model.trafficItems.length > 5 ? model.trafficItems[5].value : '--'));
-    r.add(_DI('累计连接', model.trafficItems.length > 2 ? model.trafficItems[2].value : '--'));
-    r.add(_DI('本次连接', '--'));
-    return r;
+  String get _deviceModel => model.subtitle.split('/').first.trim();
+  String get _swVersion => model.identityItems.length > 3 ? model.identityItems[3].value : '--';
+  String get _temperature {
+    for (final item in model.trafficItems) {
+      if (item.k.toLowerCase().contains('temp')) return formatTemperature(item.value);
+    }
+    for (final item in model.identityItems) {
+      if (item.k.toLowerCase().contains('temp')) return formatTemperature(item.value);
+    }
+    return '--';
   }
 
   @override
-  Widget build(BuildContext context) => Column(children: [
-    for (int i = 0; i < _rows.length; i += 2)
-      Padding(
-        padding: EdgeInsets.only(bottom: i < _rows.length - 2 ? 4 : 0),
-        child: Row(children: [
-          Expanded(child: _DITile(l: _rows[i].k, v: _rows[i].v)),
-          const SizedBox(width: 10),
-          Expanded(child: _DITile(l: i + 1 < _rows.length ? _rows[i + 1].k : '', v: i + 1 < _rows.length ? _rows[i + 1].v : '')),
-        ]),
-      ),
-  ]);
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      // Row 1: 3 columns
+      Row(children: [
+        Expanded(child: _DITile(l: '设备型号', v: _deviceModel)),
+        const SizedBox(width: 8),
+        Expanded(child: _DITile(l: '软件版本', v: _swVersion)),
+        const SizedBox(width: 8),
+        Expanded(child: _DITile(l: '当前温度', v: _temperature)),
+      ]),
+      const SizedBox(height: 8),
+      // Row 2
+      Row(children: [
+        Expanded(child: _DITile(l: '下载速率', v: model.downloadRate)),
+        const SizedBox(width: 8),
+        Expanded(child: _DITile(l: '上传速率', v: model.uploadRate)),
+      ]),
+      const SizedBox(height: 8),
+      // Row 3
+      Row(children: [
+        Expanded(child: _DITile(l: '当日下载', v: model.trafficItems.isNotEmpty ? formatBytes(model.trafficItems[0].value) : '--')),
+        const SizedBox(width: 8),
+        Expanded(child: _DITile(l: '当日上传', v: model.trafficItems.length > 1 ? formatBytes(model.trafficItems[1].value) : '--')),
+      ]),
+      const SizedBox(height: 8),
+      // Row 4
+      Row(children: [
+        Expanded(child: _DITile(l: '当月下载', v: model.vendor == CpeVendor.fiberhome && model.trafficItems.length > 4 ? formatBytes(model.trafficItems[4].value) : '--')),
+        const SizedBox(width: 8),
+        Expanded(child: _DITile(l: '当月上传', v: model.vendor == CpeVendor.fiberhome && model.trafficItems.length > 5 ? formatBytes(model.trafficItems[5].value) : '--')),
+      ]),
+      const SizedBox(height: 8),
+      // Row 5
+      Row(children: [
+        Expanded(child: _DITile(l: '系统运行时长', v: model.trafficItems.length > 2 ? model.trafficItems[2].value : '--')),
+        const SizedBox(width: 8),
+        Expanded(child: _DITile(l: '当前上网时长', v: '--')),
+      ]),
+    ],
+  );
 }
 
 class _DI { const _DI(this.k, this.v); final String k, v; }
