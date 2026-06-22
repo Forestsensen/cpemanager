@@ -29,7 +29,11 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: flutter pub get
 
-      - name: Build iOS (no codesign, generates Podfile automatically)
+      - name: Install CocoaPods dependencies
+        working-directory: ${{ env.PROJECT_DIR }}/ios
+        run: pod install --repo-update
+
+      - name: Build iOS (no codesign)
         working-directory: ${{ env.PROJECT_DIR }}
         run: flutter build ios --release --no-codesign --no-tree-shake-icons
 
