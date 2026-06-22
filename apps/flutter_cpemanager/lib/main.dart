@@ -433,6 +433,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: CustomScrollView(
           controller: scrollController,
           slivers: [
+            if (tabIndex == 0)
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
@@ -484,13 +485,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   IndexedStack(
                     index: tabIndex,
                     children: [
-                      LoginWorkspace(
-                        vendor: vendor,
-                        hostController: hostController,
-                        usernameController: usernameController,
-                        passwordController: passwordController,
-                        onRead: busy ? null : () => refreshSnapshot(),
-                      ),
                       PccWorkspace(model: model),
                       CarrierWorkspace(model: model),
                       LockWorkspace(
@@ -510,7 +504,13 @@ class _HomeScreenState extends State<HomeScreen> {
                         onFiberhomeDualCell:
                             busy ? null : setFiberhomeDualCellLock,
                       ),
-                      SpeedWorkspace(model: model, rawOutput: rawOutput),
+                      LoginWorkspace(
+                        vendor: vendor,
+                        hostController: hostController,
+                        usernameController: usernameController,
+                        passwordController: passwordController,
+                        onRead: busy ? null : () => refreshSnapshot(),
+                      ),
                     ],
                   ),
                 ],
@@ -533,11 +533,6 @@ class _HomeScreenState extends State<HomeScreen> {
         indicatorColor: CpeColors.tileAccent,
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.account_circle_outlined),
-            selectedIcon: Icon(Icons.account_circle),
-            label: '登录',
-          ),
-          NavigationDestination(
             icon: Icon(Icons.tune),
             selectedIcon: Icon(Icons.tune),
             label: 'PCC',
@@ -553,9 +548,9 @@ class _HomeScreenState extends State<HomeScreen> {
             label: '锁频',
           ),
           NavigationDestination(
-            icon: Icon(Icons.speed_outlined),
-            selectedIcon: Icon(Icons.speed),
-            label: '速率',
+            icon: Icon(Icons.account_circle_outlined),
+            selectedIcon: Icon(Icons.account_circle),
+            label: '登录',
           ),
         ],
       ),
@@ -1251,13 +1246,13 @@ class _LinkInfoRow extends StatelessWidget {
       Expanded(child: _SectionCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Text('下行链路', style: TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w700, fontSize: 13)),
         const SizedBox(height: 8),
-        for (final it in model.downlinkItems.take(2)) Padding(padding: const EdgeInsets.only(bottom: 3), child: _ILine(it)),
+        for (final it in model.downlinkItems) Padding(padding: const EdgeInsets.only(bottom: 3), child: _ILine(it)),
       ]))),
       const SizedBox(width: 10),
       Expanded(child: _SectionCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Text('上行链路', style: TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w700, fontSize: 13)),
         const SizedBox(height: 8),
-        for (final it in model.uplinkItems.take(2)) Padding(padding: const EdgeInsets.only(bottom: 3), child: _ILine(it)),
+        for (final it in model.uplinkItems) Padding(padding: const EdgeInsets.only(bottom: 3), child: _ILine(it)),
       ]))),
     ],
   );
@@ -2429,19 +2424,24 @@ class DashboardModel {
             firstValue(signal, ['QCI', 'qci'])),
       ],
       downlinkItems: [
-        KvItem(metricLabel(displayMode, 'MCS', 'nrdlmcs'),
-            parseMcs(firstValue(signal, ['nrdlmcs']))),
         KvItem(metricLabel(displayMode, '调制', 'DL_Modulation'),
             parseModulation(firstValue(signal, ['nrdlmcs']))),
+        KvItem(metricLabel(displayMode, 'MCS', 'nrdlmcs'),
+            parseMcs(firstValue(signal, ['nrdlmcs']))),
         KvItem(metricLabel(displayMode, 'RANK', 'nrrank'),
             firstValue(signal, ['nrrank'])),
+        KvItem(metricLabel(displayMode, 'RB', 'nrdlrb'),
+            firstValue(signal, ['nrdlrb', 'dl_rb'], fallback: '--')),
       ],
       uplinkItems: [
-        KvItem(metricLabel(displayMode, 'MCS', 'nrulmcs'),
-            parseMcs(firstValue(signal, ['nrulmcs']))),
         KvItem(metricLabel(displayMode, '调制', 'UL_Modulation'),
             parseModulation(firstValue(signal, ['nrulmcs']))),
-        KvItem(metricLabel(displayMode, 'MIMO', 'UL_MIMO'), '--'),
+        KvItem(metricLabel(displayMode, 'MCS', 'nrulmcs'),
+            parseMcs(firstValue(signal, ['nrulmcs']))),
+        KvItem(metricLabel(displayMode, 'RANK', 'UL_RANK'),
+            firstValue(signal, ['nrrank', 'ul_rank'], fallback: '--')),
+        KvItem(metricLabel(displayMode, 'RB', 'nrulrb'),
+            firstValue(signal, ['nrulrb', 'ul_rb'], fallback: '--')),
       ],
       trafficItems: [
         KvItem(metricLabel(displayMode, '当前下载', 'CurrentDownload'),
@@ -2574,19 +2574,23 @@ class DashboardModel {
             metricLabel(displayMode, '承载等级', 'QCI'), firstValue(base, ['QCI'])),
       ],
       downlinkItems: [
+        KvItem(metricLabel(displayMode, '调制', 'DL_Modulation'),
+            fiberhomeModulation(base, rawKeys: const ['DL_Modulation', 'DlModulation'], mcsKey: 'DlMCS', displayMode: displayMode)),
         KvItem(metricLabel(displayMode, 'MCS', 'DlMCS'),
             firstValue(base, ['DlMCS'])),
-        KvItem(metricLabel(displayMode, 'MIMO 层数', 'DlMimo'),
+        KvItem(metricLabel(displayMode, 'RANK', 'DlMimo'),
             firstValue(base, ['DlMimo'])),
-        KvItem(metricLabel(displayMode, '带宽', 'DlBandWidth'),
+        KvItem(metricLabel(displayMode, 'RB', 'DlBandWidth'),
             firstValue(base, ['DlBandWidth'])),
       ],
       uplinkItems: [
+        KvItem(metricLabel(displayMode, '调制', 'UL_Modulation'),
+            fiberhomeModulation(base, rawKeys: const ['UL_Modulation', 'UlModulation'], mcsKey: 'UlMCS', displayMode: displayMode)),
         KvItem(metricLabel(displayMode, 'MCS', 'UlMCS'),
             firstValue(base, ['UlMCS'])),
-        KvItem(metricLabel(displayMode, 'MIMO 层数', 'UlMimo'),
+        KvItem(metricLabel(displayMode, 'RANK', 'UlMimo'),
             firstValue(base, ['UlMimo'])),
-        KvItem(metricLabel(displayMode, '带宽', 'UlBandWidth'),
+        KvItem(metricLabel(displayMode, 'RB', 'UlBandWidth'),
             firstValue(base, ['UlBandWidth'])),
       ],
       trafficItems: [
@@ -2685,7 +2689,7 @@ class BarItem {
   factory BarItem.cqi(String value) {
     final number = numeric(value);
     return BarItem(
-      label: 'CQI0',
+      label: 'CQI',
       value: value,
       progress: normalize(number, 0, 15),
       color: CpeColors.good,
