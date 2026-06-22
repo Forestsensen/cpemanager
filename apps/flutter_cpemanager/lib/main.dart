@@ -1040,8 +1040,6 @@ class _Badge extends StatelessWidget {
   );
 }
 
-/// 2. Battery row - two equal cards
-}
 
 /// 3. SIM AMBR panel
 class _SimAmbrPanel extends StatelessWidget {
