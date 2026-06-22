@@ -366,7 +366,12 @@ class _HomeScreenState extends State<HomeScreen> {
           setState(() {
             snapshot = next;
             neighbors = fiberhomeNeighbors(next);
-            rawOutput = const JsonEncoder.withIndent('  ').convert(next);
+            final json = const JsonEncoder.withIndent('  ').convert(next);
+            final baseInfo = next['baseInfo'];
+            final keysDiag = baseInfo is Map
+                ? 'BASEINFO KEYS (${baseInfo.length}): ${baseInfo.keys.toList()}\n'
+                : 'BASEINFO is not a Map: ${baseInfo.runtimeType}\n';
+            rawOutput = '$keysDiag\n$json';
             lastUpdated = DateTime.now();
           });
         }
@@ -1857,22 +1862,19 @@ class DenseKvGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final columns = constraints.maxWidth > 560 ? 3 : 2;
-        return GridView.builder(
-          itemCount: items.length,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-            mainAxisExtent: compact ? 86 : 98,
-          ),
-          itemBuilder: (context, index) => KvTile(item: items[index]),
-        );
-      },
+    final screenWidth = MediaQuery.of(context).size.width;
+    final columns = screenWidth > 560 ? 3 : 2;
+    return GridView.builder(
+      itemCount: items.length,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: columns,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        mainAxisExtent: compact ? 86 : 98,
+      ),
+      itemBuilder: (context, index) => KvTile(item: items[index]),
     );
   }
 }
@@ -2607,7 +2609,8 @@ class DashboardModel {
     Map<String, List<Map<String, String>>>? neighbors,
     DisplayMode displayMode,
   ) {
-    final base = mapAt(snapshot, 'baseInfo');
+    // 处理可能的 {"ret":0, "data":{...}} 嵌套格式
+    final base = _fiberhomeBaseInfoMap(snapshot?['baseInfo']);
     final network = mapAt(snapshot, 'networkInfo');
     final lockBand = mapAt(snapshot, 'lockBand');
     final cellList = mapAt(snapshot, 'cellList');
@@ -2874,6 +2877,23 @@ class CpeColors {
   static Color get badgeMode  => const Color(0xff4493f5);
 }
 
+/// 处理烽火 API 响应中可能存在的 {"ret":0, "data":{...}} 嵌套格式
+/// 如果检测到 data 键包含有效的 Map，则返回展开的 data 内容
+Map<String, String> _fiberhomeBaseInfoMap(Map<String, dynamic>? rawBaseInfo) {
+  if (rawBaseInfo == null) return <String, String>{};
+  final maybeData = rawBaseInfo['data'];
+  // 如果 data 是一个非空 Map，使用 data 内部的内容
+  if (maybeData is Map && maybeData.isNotEmpty) {
+    return maybeData.map(
+      (k, v) => MapEntry(k.toString(), v.toString()),
+    );
+  }
+  // 否则直接使用顶层字段
+  return rawBaseInfo.map(
+    (k, v) => MapEntry(k.toString(), v.toString()),
+  );
+}
+
 Map<String, String> mapAt(Map<String, dynamic>? value, String key) {
   final item = value?[key];
   if (item is Map<String, String>) {
@@ -2888,10 +2908,8 @@ Map<String, String> mapAt(Map<String, dynamic>? value, String key) {
 Map<String, List<Map<String, String>>> fiberhomeNeighbors(
   Map<String, dynamic> snapshot,
 ) {
-  final baseInfo = snapshot['baseInfo'];
-  if (baseInfo is Map) {
-    final base = baseInfo
-        .map((key, value) => MapEntry(key.toString(), value.toString()));
+  final base = _fiberhomeBaseInfoMap(snapshot['baseInfo']);
+  if (base.isNotEmpty) {
     final bands = splitCsv(base['BAND_NBR']);
     final arfcns = splitCsv(base['EARFCN_NBR']);
     final pcis = splitCsv(base['PCI_NBR']);
