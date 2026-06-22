@@ -35,7 +35,7 @@ jobs:
 
       - name: Build iOS (no codesign)
         working-directory: ${{ env.PROJECT_DIR }}
-        run: flutter build ios --release --no-codesign --no-tree-shake-icons
+        run: flutter build ios --release --no-codesign --no-tree-shake-icons --verbose
 
       - name: Package IPA (for TrollStore)
         working-directory: ${{ env.PROJECT_DIR }}
