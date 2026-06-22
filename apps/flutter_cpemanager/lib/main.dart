@@ -804,7 +804,7 @@ class DeviceProfileSelector extends StatelessWidget {
     return DropdownButtonFormField<CpeVendor>(
       initialValue: vendor,
       isExpanded: true,
-      decoration: const InputDecoration(
+      decoration: InputDecoration(
         labelText: '设备档案',
         prefixIcon: Icon(Icons.router_outlined),
       ),
@@ -932,7 +932,7 @@ class LoginWorkspace extends StatelessWidget {
                 child: TextField(
                   controller: hostController,
                   keyboardType: TextInputType.url,
-                  decoration: const InputDecoration(hintText: '192.168.8.1'),
+                  decoration: InputDecoration(hintText: '192.168.8.1'),
                 ),
               ),
               const SizedBox(height: 12),
@@ -941,7 +941,7 @@ class LoginWorkspace extends StatelessWidget {
                 helper: '默认账号通常为 admin',
                 child: TextField(
                   controller: usernameController,
-                  decoration: const InputDecoration(hintText: 'admin'),
+                  decoration: InputDecoration(hintText: 'admin'),
                 ),
               ),
               const SizedBox(height: 12),
@@ -2131,7 +2131,7 @@ class RawPanel extends StatelessWidget {
             constraints: const BoxConstraints(minHeight: 120),
             child: SelectableText(
               rawOutput.isEmpty ? '暂无数据。' : rawOutput,
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: 'monospace',
                 fontSize: 12.5,
                 height: 1.35,
