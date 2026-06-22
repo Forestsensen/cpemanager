@@ -144,6 +144,7 @@ class _CpeManagerAppState extends State<CpeManagerApp> {
 
   @override
   Widget build(BuildContext context) {
+    CpeColors.isDark = _effectiveIsDark;
     final seed = CpeColors.primary;
     return MaterialApp(
       debugShowCheckedModeBanner: false,
