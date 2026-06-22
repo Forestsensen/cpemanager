@@ -294,7 +294,6 @@ class _HomeScreenState extends State<HomeScreen> {
             neighbors = nextNeighbors;
             rawOutput = const JsonEncoder.withIndent('  ').convert(next);
             lastUpdated = DateTime.now();
-          _saveCredentials();
           });
         } else {
           final cpe = fiberhomeClient();
@@ -554,7 +553,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         hostController: hostController,
                         usernameController: usernameController,
                         passwordController: passwordController,
-                        onRead: busy ? null : () => refreshSnapshot(),
+                        onRead: busy ? null : () { _saveCredentials(); refreshSnapshot(); },
                       ),
                     ],
                   ),
