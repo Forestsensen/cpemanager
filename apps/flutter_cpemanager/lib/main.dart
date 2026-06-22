@@ -725,7 +725,7 @@ class HeaderPanel extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       model.subtitle,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: CpeColors.muted,
                         fontWeight: FontWeight.w600,
                       ),
@@ -821,7 +821,7 @@ class DeviceProfileSelector extends StatelessWidget {
                   '${profile.title} · ${profile.protocol}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: CpeColors.ink,
                     fontWeight: FontWeight.w900,
                   ),
@@ -1012,7 +1012,7 @@ class DeviceProfileCard extends StatelessWidget {
               children: [
                 Text(
                   profile.title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: CpeColors.ink,
                     fontWeight: FontWeight.w900,
                     fontSize: 16,
@@ -1023,7 +1023,7 @@ class DeviceProfileCard extends StatelessWidget {
                   profile.description,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: CpeColors.muted,
                     fontWeight: FontWeight.w600,
                     height: 1.25,
@@ -1887,7 +1887,7 @@ class KvTile extends StatelessWidget {
             item.label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               color: CpeColors.muted,
               fontWeight: FontWeight.w600,
               fontSize: 11,
@@ -1898,7 +1898,7 @@ class KvTile extends StatelessWidget {
             item.value,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               color: CpeColors.ink,
               fontWeight: FontWeight.w900,
               fontSize: 16,
@@ -1929,7 +1929,7 @@ class MetricBar extends StatelessWidget {
             width: 52,
             child: Text(
               item.label,
-              style: const TextStyle(
+              style: TextStyle(
                 color: CpeColors.muted,
                 fontWeight: FontWeight.w700,
                 fontSize: 13,
@@ -1956,7 +1956,7 @@ class MetricBar extends StatelessWidget {
               textAlign: TextAlign.right,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 color: CpeColors.ink,
                 fontWeight: FontWeight.w900,
                 fontSize: 14,
@@ -1992,7 +1992,7 @@ class PowerRow extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 color: CpeColors.ink,
                 fontWeight: FontWeight.w700,
               ),
@@ -2000,7 +2000,7 @@ class PowerRow extends StatelessWidget {
           ),
           Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               color: CpeColors.ink,
               fontWeight: FontWeight.w900,
             ),
@@ -2034,7 +2034,7 @@ class MiniPanel extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               color: CpeColors.ink,
               fontWeight: FontWeight.w900,
               fontSize: 18,
@@ -2049,7 +2049,7 @@ class MiniPanel extends StatelessWidget {
                   Expanded(
                     child: Text(
                       item.label,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: CpeColors.muted,
                         fontWeight: FontWeight.w700,
                       ),
@@ -2057,7 +2057,7 @@ class MiniPanel extends StatelessWidget {
                   ),
                   Text(
                     item.value,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: CpeColors.ink,
                       fontWeight: FontWeight.w900,
                     ),
@@ -2094,7 +2094,7 @@ class SpeedTile extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 color: CpeColors.muted,
                 fontWeight: FontWeight.w700,
               ),
@@ -2102,7 +2102,7 @@ class SpeedTile extends StatelessWidget {
           ),
           Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               color: CpeColors.ink,
               fontWeight: FontWeight.w900,
               fontSize: 17,
@@ -2163,7 +2163,7 @@ class FieldBlock extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             color: CpeColors.ink,
             fontWeight: FontWeight.w800,
           ),
@@ -2259,7 +2259,7 @@ class InfoStrip extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               color: CpeColors.noticeText,
               fontWeight: FontWeight.w900,
             ),
@@ -2289,7 +2289,7 @@ class EmptyOrText extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       text.trim().isEmpty ? empty : text,
-      style: const TextStyle(
+      style: TextStyle(
         color: CpeColors.muted,
         fontWeight: FontWeight.w600,
         height: 1.4,
@@ -2385,7 +2385,7 @@ class SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       title,
-      style: const TextStyle(
+      style: TextStyle(
         color: CpeColors.ink,
         fontWeight: FontWeight.w700,
         fontSize: 14,
