@@ -679,6 +679,8 @@ class HeaderPanel extends StatelessWidget {
     required this.onAutoRefreshChanged,
     required this.onDisplayModeChanged,
     required this.onVendorChanged,
+    this.themeMode = AppThemeMode.dark,
+    this.onThemeModeChanged,
     super.key,
   });
 
@@ -1798,7 +1800,7 @@ class CellTable extends StatelessWidget {
           4: FlexColumnWidth(1.1),
         },
         children: [
-          const TableRow(
+          TableRow(
             decoration: BoxDecoration(color: CpeColors.tileAccent),
             children: [
               TableCellText('BAND', head: true),
