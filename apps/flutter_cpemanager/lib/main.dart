@@ -1314,15 +1314,24 @@ class _PowerGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final base = model.powerItems.map((e) => e).toList();
-    while (base.length < 4) base.add(KvItem('--', '--'));
+    // 收集所有功率相关项（真实数据 + 带宽补充）
+    final items = <KvItem>[
+      ...model.powerItems,
+      // 从 primaryItems 中提取带宽信息作为补充（DL/UL BW）
+      if (model.primaryItems.length > 3)
+        KvItem('DL BW', model.primaryItems[3].value),
+      // 尝试从 modulationItems 获取 UL BW
+      if (model.uplinkItems.isNotEmpty && model.uplinkItems.length > 3)
+        KvItem('UL BW', model.uplinkItems[3].value),
+    ];
+    // 保证至少有 powerItems 的数量，不足补空位
+    while (items.length < model.powerItems.length) {
+      items.add(KvItem('', ''));
+    }
     return Wrap(spacing: 8, runSpacing: 8, children: [
-      for (final item in base)
-        SizedBox(width: 90, child: _PTile(label: item.label, value: item.value)),
-      // BW + TM placeholders
-      _PTile(label: 'DL BW', value: '--'),
-      _PTile(label: 'UL BW', value: '--'),
-      _PTile(label: 'TM', value: '--'),
+      for (final item in items)
+        if (item.label.isNotEmpty)
+          SizedBox(width: 90, child: _PTile(label: item.label, value: item.value)),
     ]);
   }
 }
@@ -1425,18 +1434,18 @@ class _DeviceGrid extends StatelessWidget {
         Expanded(child: _DITile(l: '上传速率', v: model.uploadRate)),
       ]),
       const SizedBox(height: 8),
-      // Row 3: 当日下载/上传 (index 2,3)
+      // Row 3: 当日下载/上传 (index 2,3) — trafficItems value 已格式化过，直接使用
       Row(children: [
-        Expanded(child: _DITile(l: '当日下载', v: model.trafficItems.length > 2 ? formatBytes(model.trafficItems[2].value) : '--')),
+        Expanded(child: _DITile(l: '当日下载', v: model.trafficItems.length > 2 ? model.trafficItems[2].value : '--')),
         const SizedBox(width: 8),
-        Expanded(child: _DITile(l: '当日上传', v: model.trafficItems.length > 3 ? formatBytes(model.trafficItems[3].value) : '--')),
+        Expanded(child: _DITile(l: '当日上传', v: model.trafficItems.length > 3 ? model.trafficItems[3].value : '--')),
       ]),
       const SizedBox(height: 8),
-      // Row 4: 当月下载/上传 (index 4,5)
+      // Row 4: 当月下载/上传 (index 4,5) — 同上
       Row(children: [
-        Expanded(child: _DITile(l: '当月下载', v: model.trafficItems.length > 4 ? formatBytes(model.trafficItems[4].value) : '--')),
+        Expanded(child: _DITile(l: '当月下载', v: model.trafficItems.length > 4 ? model.trafficItems[4].value : '--')),
         const SizedBox(width: 8),
-        Expanded(child: _DITile(l: '当月上传', v: model.trafficItems.length > 5 ? formatBytes(model.trafficItems[5].value) : '--')),
+        Expanded(child: _DITile(l: '当月上传', v: model.trafficItems.length > 5 ? model.trafficItems[5].value : '--')),
       ]),
     ],
   );
@@ -2654,10 +2663,10 @@ class DashboardModel {
       ],
       identityItems: [
         KvItem(metricLabel(displayMode, 'gNB - Cell', 'gNB_Cell'), gnbCell),
-        KvItem(metricLabel(displayMode, 'NCGI', 'NCGI'),
-            decimalText(parseFlexibleInt(ncgi))),
+        // NCGI 直接显示原始字符串（如 "CELL ID:82c509108 PLMN:46001"），比解析后的十进制数字更有意义
+        KvItem(metricLabel(displayMode, 'NCGI', 'NCGI'), ncgi.isEmpty ? '--' : ncgi),
         KvItem(metricLabel(displayMode, 'ECGI', 'ECGI'),
-            ecgi == '--' ? decimalText(parseFlexibleInt(ecgi)) : ecgi),
+            ecgi.isEmpty ? '--' : ecgi),
         KvItem(metricLabel(displayMode, '软件版本', 'Software_version'),
             firstValue(base, ['Software_version'])),
         KvItem(metricLabel(displayMode, '温度', 'Temperature'),
