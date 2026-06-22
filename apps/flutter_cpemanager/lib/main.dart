@@ -80,47 +80,98 @@ CpeDeviceProfile cpeProfile(CpeVendor vendor) {
   return cpeDeviceProfiles.firstWhere((item) => item.vendor == vendor);
 }
 
-class CpeManagerApp extends StatelessWidget {
+class CpeManagerApp extends StatefulWidget {
   const CpeManagerApp({super.key});
+  @override
+  State<CpeManagerApp> createState() => _CpeManagerAppState();
+}
+
+class _CpeManagerAppState extends State<CpeManagerApp> {
+  AppThemeMode _themeMode = AppThemeMode.dark;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTheme();
+  }
+
+  Future<void> _loadTheme() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File(dir.path + '/cpe_credentials.json');
+      if (!await file.exists()) return;
+      final data = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      final saved = data['themeMode'] as String?;
+      if (saved != null) {
+        final match = AppThemeMode.values.where((m) => m.name == saved);
+        if (match.isNotEmpty) {
+          setState(() {
+            _themeMode = match.first;
+            CpeColors.isDark = _effectiveIsDark;
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  bool get _effectiveIsDark {
+    if (_themeMode == AppThemeMode.system) {
+      return WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark;
+    }
+    return _themeMode == AppThemeMode.dark;
+  }
+
+  void _setThemeMode(AppThemeMode mode) {
+    setState(() {
+      _themeMode = mode;
+      CpeColors.isDark = _effectiveIsDark;
+    });
+    _saveTheme(mode);
+  }
+
+  Future<void> _saveTheme(AppThemeMode mode) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File(dir.path + '/cpe_credentials.json');
+      Map<String, dynamic> data = {};
+      if (await file.exists()) {
+        data = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      }
+      data['themeMode'] = mode.name;
+      await file.writeAsString(jsonEncode(data));
+    } catch (_) {}
+  }
 
   @override
   Widget build(BuildContext context) {
-    const seed = CpeColors.primary;
+    CpeColors.isDark = _effectiveIsDark;
+    final seed = CpeColors.primary;
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'CPE Manager',
+      themeMode: _themeMode == AppThemeMode.system ? ThemeMode.system
+          : _themeMode == AppThemeMode.light ? ThemeMode.light : ThemeMode.dark,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: seed,
-          brightness: Brightness.dark,
-        ),
+        colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.light),
         scaffoldBackgroundColor: CpeColors.background,
         useMaterial3: true,
-        fontFamilyFallback: const ['PingFang SC', 'Noto Sans CJK SC'],
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: CpeColors.input,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: CpeColors.border),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: CpeColors.primary, width: 1.3),
-          ),
-        ),
+        fontFamilyFallback: ['PingFang SC', 'Noto Sans CJK SC'],
       ),
-      home: const HomeScreen(),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark),
+        scaffoldBackgroundColor: CpeColors.background,
+        useMaterial3: true,
+        fontFamilyFallback: ['PingFang SC', 'Noto Sans CJK SC'],
+      ),
+      home: HomeScreen(onThemeModeChanged: _setThemeMode, themeMode: _themeMode),
     );
   }
 }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
-
+  const HomeScreen({this.onThemeModeChanged, this.themeMode, super.key});
+  final ValueChanged<AppThemeMode>? onThemeModeChanged;
+  final AppThemeMode? themeMode;
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -500,6 +551,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   autoRefresh: autoRefresh,
                   lastUpdated: lastUpdated,
                   displayMode: displayMode,
+                  themeMode: widget.themeMode ?? AppThemeMode.dark,
+                  onThemeModeChanged: widget.onThemeModeChanged,
                   onRefresh: () => refreshSnapshot(),
                   onAutoRefreshChanged: (value) {
                     setState(() {
@@ -640,6 +693,8 @@ class HeaderPanel extends StatelessWidget {
   final ValueChanged<bool> onAutoRefreshChanged;
   final ValueChanged<DisplayMode> onDisplayModeChanged;
   final ValueChanged<CpeVendor> onVendorChanged;
+  final AppThemeMode themeMode;
+  final ValueChanged<AppThemeMode>? onThemeModeChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -666,7 +721,7 @@ class HeaderPanel extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       model.subtitle,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: CpeColors.muted,
                         fontWeight: FontWeight.w600,
                       ),
@@ -678,6 +733,20 @@ class HeaderPanel extends StatelessWidget {
                 tooltip: busy ? busyLabel : '立即刷新',
                 onPressed: busy ? null : onRefresh,
                 icon: const Icon(Icons.refresh),
+              ),
+              const SizedBox(width: 8),
+              Tooltip(
+                message: themeMode.label,
+                child: IconButton.filledTonal(
+                  onPressed: onThemeModeChanged != null
+                      ? () {
+                          final next = AppThemeMode.values[
+                              (themeMode.index + 1) % AppThemeMode.values.length];
+                          onThemeModeChanged!(next);
+                        }
+                      : null,
+                  icon: Icon(themeMode.icon, size: 20),
+                ),
               ),
             ],
           ),
@@ -731,7 +800,7 @@ class DeviceProfileSelector extends StatelessWidget {
     return DropdownButtonFormField<CpeVendor>(
       initialValue: vendor,
       isExpanded: true,
-      decoration: const InputDecoration(
+      decoration: InputDecoration(
         labelText: '设备档案',
         prefixIcon: Icon(Icons.router_outlined),
       ),
@@ -748,7 +817,7 @@ class DeviceProfileSelector extends StatelessWidget {
                   '${profile.title} · ${profile.protocol}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: CpeColors.ink,
                     fontWeight: FontWeight.w900,
                   ),
@@ -859,7 +928,7 @@ class LoginWorkspace extends StatelessWidget {
                 child: TextField(
                   controller: hostController,
                   keyboardType: TextInputType.url,
-                  decoration: const InputDecoration(hintText: '192.168.8.1'),
+                  decoration: InputDecoration(hintText: '192.168.8.1'),
                 ),
               ),
               const SizedBox(height: 12),
@@ -868,7 +937,7 @@ class LoginWorkspace extends StatelessWidget {
                 helper: '默认账号通常为 admin',
                 child: TextField(
                   controller: usernameController,
-                  decoration: const InputDecoration(hintText: 'admin'),
+                  decoration: InputDecoration(hintText: 'admin'),
                 ),
               ),
               const SizedBox(height: 12),
@@ -939,7 +1008,7 @@ class DeviceProfileCard extends StatelessWidget {
               children: [
                 Text(
                   profile.title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: CpeColors.ink,
                     fontWeight: FontWeight.w900,
                     fontSize: 16,
@@ -950,7 +1019,7 @@ class DeviceProfileCard extends StatelessWidget {
                   profile.description,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: CpeColors.muted,
                     fontWeight: FontWeight.w600,
                     height: 1.25,
@@ -1036,7 +1105,7 @@ class _SectionCard extends StatelessWidget {
     ),
     child: title != null
         ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title!, style: const TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w700, fontSize: 14)),
+            Text(title!, style: TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w700, fontSize: 14)),
             const SizedBox(height: 10),
             child,
           ])
@@ -1062,7 +1131,7 @@ class _ConnHeader extends StatelessWidget {
     ),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
-        const Text('连接情况', style: TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w800, fontSize: 15)),
+        Text('连接情况', style: TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w800, fontSize: 15)),
         const Spacer(),
         GestureDetector(
           onTap: () {},
@@ -1104,7 +1173,7 @@ class _SimAmbrPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) => _SectionCard(
     child: Row(children: [
-      Text('SIM卡AMBR', style: const TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w700, fontSize: 14)),
+      Text('SIM卡AMBR', style: TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w700, fontSize: 14)),
       const Spacer(),
       GestureDetector(
         onTap: () {},
@@ -1128,10 +1197,10 @@ class _MetricTile extends StatelessWidget {
     padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
     decoration: BoxDecoration(color: CpeColors.tile, borderRadius: BorderRadius.circular(8)),
     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Text(label, style: const TextStyle(color: CpeColors.muted, fontSize: 11, fontWeight: FontWeight.w600)),
+      Text(label, style: TextStyle(color: CpeColors.muted, fontSize: 11, fontWeight: FontWeight.w600)),
       const SizedBox(height: 4),
       Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: CpeColors.ink, fontSize: 14, fontWeight: FontWeight.w900)),
+          style: TextStyle(color: CpeColors.ink, fontSize: 14, fontWeight: FontWeight.w900)),
     ]),
   );
 }
@@ -1185,7 +1254,7 @@ class _RfTile extends StatelessWidget {
     padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
     decoration: BoxDecoration(color: CpeColors.tile, borderRadius: BorderRadius.circular(8)),
     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Text(item.label, style: const TextStyle(color: CpeColors.muted, fontSize: 11, fontWeight: FontWeight.w600)),
+      Text(item.label, style: TextStyle(color: CpeColors.muted, fontSize: 11, fontWeight: FontWeight.w600)),
       const SizedBox(height: 3),
       Text(item.value, style: TextStyle(color: item.color, fontSize: 16, fontWeight: FontWeight.w900)),
       const SizedBox(height: 4),
@@ -1248,7 +1317,7 @@ class _PTile extends StatelessWidget {
     padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
     decoration: BoxDecoration(color: CpeColors.tile, borderRadius: BorderRadius.circular(8)),
     child: Column(children: [
-      Text(label, style: const TextStyle(color: CpeColors.muted, fontSize: 10, fontWeight: FontWeight.w600)),
+      Text(label, style: TextStyle(color: CpeColors.muted, fontSize: 10, fontWeight: FontWeight.w600)),
       const SizedBox(height: 3),
       Text(value, style: TextStyle(color: c, fontSize: 13, fontWeight: FontWeight.w900)),
     ]),
@@ -1265,13 +1334,13 @@ class _LinkInfoRow extends StatelessWidget {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Expanded(child: _SectionCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('下行链路', style: TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w700, fontSize: 13)),
+        Text('下行链路', style: TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w700, fontSize: 13)),
         const SizedBox(height: 8),
         for (final it in model.downlinkItems) Padding(padding: const EdgeInsets.only(bottom: 3), child: _ILine(it)),
       ]))),
       const SizedBox(width: 10),
       Expanded(child: _SectionCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('上行链路', style: TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w700, fontSize: 13)),
+        Text('上行链路', style: TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w700, fontSize: 13)),
         const SizedBox(height: 8),
         for (final it in model.uplinkItems) Padding(padding: const EdgeInsets.only(bottom: 3), child: _ILine(it)),
       ]))),
@@ -1285,9 +1354,9 @@ class _ILine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(children: [
-    Text(item.label, style: const TextStyle(color: CpeColors.muted, fontSize: 12, fontWeight: FontWeight.w600)),
+    Text(item.label, style: TextStyle(color: CpeColors.muted, fontSize: 12, fontWeight: FontWeight.w600)),
     const Spacer(),
-    Text(item.value, style: const TextStyle(color: CpeColors.ink, fontSize: 12, fontWeight: FontWeight.w800)),
+    Text(item.value, style: TextStyle(color: CpeColors.ink, fontSize: 12, fontWeight: FontWeight.w800)),
   ]);
 }
 
@@ -1361,8 +1430,8 @@ class _DITile extends StatelessWidget {
   @override
   Widget build(BuildContext context) => l.isEmpty ? const SizedBox.shrink()
       : Row(children: [
-        Text(l, style: const TextStyle(color: CpeColors.muted, fontSize: 11.5, fontWeight: FontWeight.w600)),
-        const Spacer(), Text(v, style: const TextStyle(color: CpeColors.ink, fontSize: 11.5, fontWeight: FontWeight.w800)),
+        Text(l, style: TextStyle(color: CpeColors.muted, fontSize: 11.5, fontWeight: FontWeight.w600)),
+        const Spacer(), Text(v, style: TextStyle(color: CpeColors.ink, fontSize: 11.5, fontWeight: FontWeight.w800)),
       ]);
 }
 
@@ -1814,7 +1883,7 @@ class KvTile extends StatelessWidget {
             item.label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               color: CpeColors.muted,
               fontWeight: FontWeight.w600,
               fontSize: 11,
@@ -1825,7 +1894,7 @@ class KvTile extends StatelessWidget {
             item.value,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               color: CpeColors.ink,
               fontWeight: FontWeight.w900,
               fontSize: 16,
@@ -1856,7 +1925,7 @@ class MetricBar extends StatelessWidget {
             width: 52,
             child: Text(
               item.label,
-              style: const TextStyle(
+              style: TextStyle(
                 color: CpeColors.muted,
                 fontWeight: FontWeight.w700,
                 fontSize: 13,
@@ -1883,7 +1952,7 @@ class MetricBar extends StatelessWidget {
               textAlign: TextAlign.right,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 color: CpeColors.ink,
                 fontWeight: FontWeight.w900,
                 fontSize: 14,
@@ -1919,7 +1988,7 @@ class PowerRow extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 color: CpeColors.ink,
                 fontWeight: FontWeight.w700,
               ),
@@ -1927,7 +1996,7 @@ class PowerRow extends StatelessWidget {
           ),
           Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               color: CpeColors.ink,
               fontWeight: FontWeight.w900,
             ),
@@ -1961,7 +2030,7 @@ class MiniPanel extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               color: CpeColors.ink,
               fontWeight: FontWeight.w900,
               fontSize: 18,
@@ -1976,7 +2045,7 @@ class MiniPanel extends StatelessWidget {
                   Expanded(
                     child: Text(
                       item.label,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: CpeColors.muted,
                         fontWeight: FontWeight.w700,
                       ),
@@ -1984,7 +2053,7 @@ class MiniPanel extends StatelessWidget {
                   ),
                   Text(
                     item.value,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: CpeColors.ink,
                       fontWeight: FontWeight.w900,
                     ),
@@ -2021,7 +2090,7 @@ class SpeedTile extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 color: CpeColors.muted,
                 fontWeight: FontWeight.w700,
               ),
@@ -2029,7 +2098,7 @@ class SpeedTile extends StatelessWidget {
           ),
           Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               color: CpeColors.ink,
               fontWeight: FontWeight.w900,
               fontSize: 17,
@@ -2058,7 +2127,7 @@ class RawPanel extends StatelessWidget {
             constraints: const BoxConstraints(minHeight: 120),
             child: SelectableText(
               rawOutput.isEmpty ? '暂无数据。' : rawOutput,
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: 'monospace',
                 fontSize: 12.5,
                 height: 1.35,
@@ -2090,7 +2159,7 @@ class FieldBlock extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             color: CpeColors.ink,
             fontWeight: FontWeight.w800,
           ),
@@ -2100,7 +2169,7 @@ class FieldBlock extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           helper,
-          style: const TextStyle(color: CpeColors.muted, fontSize: 12),
+          style: TextStyle(color: CpeColors.muted, fontSize: 12),
         ),
       ],
     );
@@ -2186,7 +2255,7 @@ class InfoStrip extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               color: CpeColors.noticeText,
               fontWeight: FontWeight.w900,
             ),
@@ -2194,7 +2263,7 @@ class InfoStrip extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             body,
-            style: const TextStyle(color: CpeColors.noticeText),
+            style: TextStyle(color: CpeColors.noticeText),
           ),
         ],
       ),
@@ -2216,7 +2285,7 @@ class EmptyOrText extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       text.trim().isEmpty ? empty : text,
-      style: const TextStyle(
+      style: TextStyle(
         color: CpeColors.muted,
         fontWeight: FontWeight.w600,
         height: 1.4,
@@ -2266,7 +2335,7 @@ class ErrorPanel extends StatelessWidget {
       ),
       child: Text(
         message,
-        style: const TextStyle(color: CpeColors.errorText),
+        style: TextStyle(color: CpeColors.errorText),
       ),
     );
   }
@@ -2291,7 +2360,7 @@ class Surface extends StatelessWidget {
         color: tinted ? CpeColors.panel : CpeColors.surface,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: CpeColors.border),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
             blurRadius: 24,
             offset: Offset(0, 12),
@@ -2312,7 +2381,7 @@ class SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       title,
-      style: const TextStyle(
+      style: TextStyle(
         color: CpeColors.ink,
         fontWeight: FontWeight.w700,
         fontSize: 14,
@@ -2757,35 +2826,36 @@ class BarItem {
 }
 
 class CpeColors {
-  // CPE++ dark theme from screenshot
-  static const background = Color(0xff0a0d12);      // deep navy bg
-  static const surface = Color(0xff111620);         // card surface
-  static const panel = Color(0xff111620);           // same as surface
-  static const input = Color(0xff1a2030);           // input fields
-  static const tile = Color(0xff161d2a);            // metric tile bg
-  static const tileAccent = Color(0xff1e2838);      // highlighted tile
-  static const border = Color(0xff252d3a);          // subtle borders
-  static const primary = Color(0xff4493f5);         // blue accent
-  static const ink = Color(0xffe0e6ed);             // main text
-  static const muted = Color(0xff7a869a);           // secondary text
-  static const good = Color(0xff30a14e);            // green (good signal)
-  static const warn = Color(0xffd4a017);            // yellow/orange
-  static const danger = Color(0xffe74c3c);          // red (bad/high power)
-  static const orange = Color(0xffe67e22);          // medium power
-  static const notice = Color(0xff2d1b00);
-  static const noticeBorder = Color(0xff5a3e00);
-  static const noticeText = Color(0xffe3b341);
-  static const error = Color(0xff3d1117);
-  static const errorBorder = Color(0xff6e2229);
-  static const errorText = Color(0xffff7b72);
-  static const shadow = Color(0x33000000);
-  // CPE++ accent
-  static const accent = Color(0xff4493f5);
-  static const accentLight = Color(0xff66a8ff);
-  static const cardBg = Color(0xff111620);
-  // Badge colors
-  static const badgeRrc = Color(0xffc17702);        // brown/orange for RRC
-  static const badgeMode = Color(0xff4493f5);       // blue for mode
+  static bool _isDark = true;
+  static bool get isDark => _isDark;
+  static set isDark(bool v) { if (_isDark != v) _isDark = v; }
+
+  static Color get background => _isDark ? const Color(0xff0a0d12) : const Color(0xffF5F7FA);
+  static Color get surface    => _isDark ? const Color(0xff111620) : const Color(0xffFFFFFF);
+  static Color get panel      => _isDark ? const Color(0xff111620) : const Color(0xffFFFFFF);
+  static Color get input      => _isDark ? const Color(0xff1a2030) : const Color(0xffE8ECF1);
+  static Color get tile       => _isDark ? const Color(0xff161d2a) : const Color(0xffEDF0F5);
+  static Color get tileAccent => _isDark ? const Color(0xff1e2838) : const Color(0xffD6E4F0);
+  static Color get border     => _isDark ? const Color(0xff252d3a) : const Color(0xffD1D5DB);
+  static Color get primary    => const Color(0xff4493f5);
+  static Color get ink        => _isDark ? const Color(0xffe0e6ed) : const Color(0xff1A1D24);
+  static Color get muted      => _isDark ? const Color(0xff7a869a) : const Color(0xff6B7280);
+  static Color get good       => _isDark ? const Color(0xff30a14e) : const Color(0xff16A34A);
+  static Color get warn       => _isDark ? const Color(0xffd4a017) : const Color(0xffCA8A04);
+  static Color get danger     => _isDark ? const Color(0xffe74c3c) : const Color(0xffDC2626);
+  static Color get orange     => _isDark ? const Color(0xffe67e22) : const Color(0xffEA580C);
+  static Color get notice     => _isDark ? const Color(0xff2d1b00) : const Color(0xffFEF3C7);
+  static Color get noticeBorder => _isDark ? const Color(0xff5a3e00) : const Color(0xffF59E0B);
+  static Color get noticeText => _isDark ? const Color(0xffe3b341) : const Color(0xff92400E);
+  static Color get error      => _isDark ? const Color(0xff3d1117) : const Color(0xffFEE2E2);
+  static Color get errorBorder=> _isDark ? const Color(0xff6e2229) : const Color(0xffEF4444);
+  static Color get errorText  => _isDark ? const Color(0xffff7b72) : const Color(0xffDC2626);
+  static Color get shadow     => _isDark ? const Color(0x33000000) : const Color(0x1A000000);
+  static Color get accent     => const Color(0xff4493f5);
+  static Color get accentLight=> const Color(0xff66a8ff);
+  static Color get cardBg     => _isDark ? const Color(0xff111620) : const Color(0xffFFFFFF);
+  static Color get badgeRrc   => _isDark ? const Color(0xffc17702) : const Color(0xffB45309);
+  static Color get badgeMode  => const Color(0xff4493f5);
 }
 
 Map<String, String> mapAt(Map<String, dynamic>? value, String key) {
