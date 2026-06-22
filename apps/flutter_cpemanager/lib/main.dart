@@ -163,10 +163,6 @@ class _CpeManagerAppState extends State<CpeManagerApp> {
         useMaterial3: true,
         fontFamilyFallback: ['PingFang SC', 'Noto Sans CJK SC'],
       ),
-      builder: (context, child) {
-        CpeColors.isDark = Theme.of(context).brightness == Brightness.dark;
-        return child!;
-      },
       home: HomeScreen(onThemeModeChanged: _setThemeMode, themeMode: _themeMode),
     );
   }
