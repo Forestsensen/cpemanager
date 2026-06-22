@@ -33,6 +33,16 @@ enum DisplayMode {
   final String description;
 }
 
+enum AppThemeMode {
+  system('跟随系统', Icons.brightness_6),
+  light('浅色模式', Icons.wb_sunny),
+  dark('深色模式', Icons.nights_stay);
+
+  const AppThemeMode(this.label, this.icon);
+  final String label;
+  final IconData icon;
+}
+
 class CpeDeviceProfile {
   const CpeDeviceProfile({
     required this.vendor,
