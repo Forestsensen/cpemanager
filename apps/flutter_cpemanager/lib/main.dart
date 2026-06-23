@@ -1067,10 +1067,33 @@ class PccWorkspace extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 调试：显示 model 关键值，帮助定位数据丢失层
+    final _dbgNcgi = model.identityItems.length > 1 ? model.identityItems[1].value : 'N/A';
+    final _dbgGnb = model.identityItems.isNotEmpty ? model.identityItems[0].value : 'N/A';
+    final _dbgT2 = model.trafficItems.length > 2 ? model.trafficItems[2].value : 'N/A';
+    final _dbgT4 = model.trafficItems.length > 4 ? model.trafficItems[4].value : 'N/A';
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Column(
         children: [
+          // ── DEBUG: model 关键字段值 ──
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: CpeColors.notice,
+              border: Border.all(color: CpeColors.noticeBorder),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              'DEBUG model:\n'
+              'identityItems(${model.identityItems.length}): gNB=$_dbgGnb | NCGI=$_dbgNcgi\n'
+              'trafficItems(${model.trafficItems.length}): 今日DL=$_dbgT2 | 当月DL=$_dbgT4\n'
+              'powerItems(${model.powerItems.length}): ${model.powerItems.map((e) => "${e.label}=${e.value}").join(", ")}',
+              style: TextStyle(fontSize: 10, fontFamily: 'monospace', color: CpeColors.noticeText),
+            ),
+          ),
+          const SizedBox(height: 10),
           // ── 1. 连接情况 (Connection Status) ──
           _ConnHeader(model: model),
           const SizedBox(height: 10),
