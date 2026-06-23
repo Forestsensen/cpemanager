@@ -1845,10 +1845,11 @@ class CellTable extends StatelessWidget {
       child: Table(
         columnWidths: const {
           0: FlexColumnWidth(1.0),
-          1: FlexColumnWidth(1.4),
-          2: FlexColumnWidth(1.0),
+          1: FlexColumnWidth(1.2),
+          2: FlexColumnWidth(0.8),
           3: FlexColumnWidth(1.1),
-          4: FlexColumnWidth(1.1),
+          4: FlexColumnWidth(1.0),
+          5: FlexColumnWidth(1.0),
         },
         children: [
           TableRow(
@@ -1859,6 +1860,7 @@ class CellTable extends StatelessWidget {
               TableCellText('PCI', head: true),
               TableCellText('RSRP', head: true),
               TableCellText('RSRQ', head: true),
+              TableCellText('SINR', head: true),
             ],
           ),
           for (var index = 0; index < cells.take(8).length; index += 1)
@@ -1874,6 +1876,7 @@ class CellTable extends StatelessWidget {
                 TableCellText(cells[index]['pci'] ?? '--'),
                 _RsrpCell(cells[index]['rsrp']),
                 TableCellText(cells[index]['rsrq'] ?? '--'),
+                _SinrCell(cells[index]['sinr']),
               ],
             ),
         ],
@@ -2379,6 +2382,41 @@ class _RsrpCell extends StatelessWidget {
     if (n == null) return CpeColors.muted;
     if (n > -85) return CpeColors.good;
     if (n > -100) return CpeColors.warn;
+    return CpeColors.danger;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = raw ?? '--';
+    final tint = _color(text);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 8),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: tint,
+          fontWeight: FontWeight.w800,
+          fontSize: 13,
+        ),
+      ),
+    );
+  }
+}
+
+/// SINR cell with color-coded signal quality indicator.
+class _SinrCell extends StatelessWidget {
+  const _SinrCell(this.raw);
+
+  final String? raw;
+
+  static Color _color(String raw) {
+    final n = numeric(raw);
+    if (n == null) return CpeColors.muted;
+    if (n > 12) return CpeColors.good;
+    if (n > 6) return CpeColors.warn;
     return CpeColors.danger;
   }
 
