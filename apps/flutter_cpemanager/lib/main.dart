@@ -1070,6 +1070,7 @@ class PccWorkspace extends StatelessWidget {
     // 调试：显示 model 关键值，帮助定位数据丢失层
     final _dbgNcgi = model.identityItems.length > 1 ? model.identityItems[1].value : 'N/A';
     final _dbgGnb = model.identityItems.isNotEmpty ? model.identityItems[0].value : 'N/A';
+    final _dbgEcgi = model.identityItems.length > 2 ? model.identityItems[2].value : 'N/A';
     final _dbgT2 = model.trafficItems.length > 2 ? model.trafficItems[2].value : 'N/A';
     final _dbgT4 = model.trafficItems.length > 4 ? model.trafficItems[4].value : 'N/A';
     return SingleChildScrollView(
@@ -1087,7 +1088,7 @@ class PccWorkspace extends StatelessWidget {
             ),
             child: Text(
               'DEBUG model:\n'
-              'identityItems(${model.identityItems.length}): gNB=$_dbgGnb | NCGI=$_dbgNcgi\n'
+              'identityItems(${model.identityItems.length}): gNB=$_dbgGnb | NCGI=$_dbgNcgi | ECGI=$_dbgEcgi\n'
               'trafficItems(${model.trafficItems.length}): 今日DL=$_dbgT2 | 当月DL=$_dbgT4\n'
               'powerItems(${model.powerItems.length}): ${model.powerItems.map((e) => "${e.label}=${e.value}").join(", ")}',
               style: TextStyle(fontSize: 10, fontFamily: 'monospace', color: CpeColors.noticeText),
@@ -2654,7 +2655,10 @@ class DashboardModel {
     final tac = firstValue(base, ['TAC']);
     final ncgi = firstValue(base, ['NCGI']);
     final ecgi = firstValue(base, ['ECGI']);
-    final gnbCell = deriveNrGnbCell(gci: ncgi);
+    // 从格式化 NCGI/ECGI 中提取纯 hex (如 "CELL ID:82c509108 PLMN:46001" → "82c509108")
+    final ncgiHex = extractCellHexFromNcgi(ncgi);
+    final ecgiHex = extractCellHexFromNcgi(ecgi);
+    final gnbCell = deriveNrGnbCell(gci: ncgiHex.isEmpty ? ncgi : ncgiHex);
     final primaryPci = firstCsvValue(firstValue(base, ['PCI_NBR']));
     final primaryArfcn = firstCsvValue(firstValue(base, ['EARFCN_NBR']));
     final primaryBand =
@@ -2682,14 +2686,14 @@ class DashboardModel {
         KvItem(metricLabel(displayMode, 'TAC 十进制', 'TAC'),
             decimalText(parseTacDecimal(tac))),
         KvItem(metricLabel(displayMode, 'GCI 十进制', 'NCGI'),
-            decimalText(parseFlexibleInt(ncgi))),
+            decimalText(parseFlexibleInt(ncgiHex.isEmpty ? ncgi : ncgiHex))),
       ],
       identityItems: [
         KvItem(metricLabel(displayMode, 'gNB - Cell', 'gNB_Cell'), gnbCell),
         // NCGI 直接显示原始字符串（如 "CELL ID:82c509108 PLMN:46001"），比解析后的十进制数字更有意义
         KvItem(metricLabel(displayMode, 'NCGI', 'NCGI'), ncgi.isEmpty ? '--' : ncgi),
         KvItem(metricLabel(displayMode, 'ECGI', 'ECGI'),
-            ecgi.isEmpty ? '--' : ecgi),
+            ecgi.isEmpty ? '--' : ecgiHex.isEmpty ? ecgi : ecgiHex),
         KvItem(metricLabel(displayMode, '软件版本', 'Software_version'),
             firstValue(base, ['Software_version'])),
         KvItem(metricLabel(displayMode, '温度', 'Temperature'),

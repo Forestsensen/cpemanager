@@ -72,6 +72,21 @@ String compoundCellText({String? baseId, String? localCellId}) {
   return '$base-$cell';
 }
 
+/// 从格式化 NCGI/ECGI 字符串中提取纯 hex 小区 ID
+/// "CELL ID:82c509108 PLMN:46001" → "82c509108"
+/// "82c509108" → "82c509108"
+String extractCellHexFromNcgi(String? formatted) {
+  if (formatted == null || formatted.isEmpty) return '';
+  // 匹配 "CELL ID:XXXXXXXX" 模式
+  final match =
+      RegExp(r'CELL\s*ID[:：]\s*([0-9A-Fa-f]+)').firstMatch(formatted);
+  if (match != null) return match.group(1)!;
+  // 兜底: 提取最长 hex 数字串
+  final hexMatch = RegExp(r'[0-9A-Fa-f]{6,}').firstMatch(formatted);
+  if (hexMatch != null) return hexMatch.group(0)!;
+  return formatted;
+}
+
 String deriveNrGnbCell({
   String? gnbId,
   String? localCellId,
