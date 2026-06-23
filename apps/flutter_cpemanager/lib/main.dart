@@ -206,7 +206,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadSavedCredentials();
-    refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    refreshTimer = Timer.periodic(const Duration(seconds: 2), (_) {
       if (!mounted || !autoRefresh || snapshot == null || busy) {
         return;
       }
@@ -874,7 +874,7 @@ class HeaderControls extends StatelessWidget {
             autoRefresh ? Icons.sync : Icons.sync_disabled,
             size: 18,
           ),
-          label: Text(autoRefresh ? '5秒自动刷新' : '手动刷新'),
+          label: Text(autoRefresh ? '2秒自动刷新' : '手动刷新'),
         ),
         StatusChip(label: '更新 ${timeText(lastUpdated)}'),
         SegmentedButton<DisplayMode>(
@@ -1070,7 +1070,6 @@ class PccWorkspace extends StatelessWidget {
     // 调试：显示 model 关键值，帮助定位数据丢失层
     final _dbgNcgi = model.identityItems.length > 1 ? model.identityItems[1].value : 'N/A';
     final _dbgGnb = model.identityItems.isNotEmpty ? model.identityItems[0].value : 'N/A';
-    final _dbgEcgi = model.identityItems.length > 2 ? model.identityItems[2].value : 'N/A';
     final _dbgT2 = model.trafficItems.length > 2 ? model.trafficItems[2].value : 'N/A';
     final _dbgT4 = model.trafficItems.length > 4 ? model.trafficItems[4].value : 'N/A';
     return SingleChildScrollView(
@@ -1088,7 +1087,7 @@ class PccWorkspace extends StatelessWidget {
             ),
             child: Text(
               'DEBUG model:\n'
-              'identityItems(${model.identityItems.length}): gNB=$_dbgGnb | NCGI=$_dbgNcgi | ECGI=$_dbgEcgi\n'
+              'identityItems(${model.identityItems.length}): gNB=$_dbgGnb | NCGI=$_dbgNcgi\n'
               'trafficItems(${model.trafficItems.length}): 今日DL=$_dbgT2 | 当月DL=$_dbgT4\n'
               'powerItems(${model.powerItems.length}): ${model.powerItems.map((e) => "${e.label}=${e.value}").join(", ")}',
               style: TextStyle(fontSize: 10, fontFamily: 'monospace', color: CpeColors.noticeText),
@@ -1873,7 +1872,7 @@ class CellTable extends StatelessWidget {
                 TableCellText(
                     cells[index]['earfcn'] ?? cells[index]['arfcn'] ?? '--'),
                 TableCellText(cells[index]['pci'] ?? '--'),
-                TableCellText(cells[index]['rsrp'] ?? '--'),
+                _RsrpCell(cells[index]['rsrp']),
                 TableCellText(cells[index]['rsrq'] ?? '--'),
               ],
             ),
@@ -2363,6 +2362,41 @@ class TableCellText extends StatelessWidget {
         style: TextStyle(
           color: CpeColors.ink,
           fontWeight: head ? FontWeight.w900 : FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+/// RSRP cell with color-coded signal strength indicator (like 射频质量).
+class _RsrpCell extends StatelessWidget {
+  const _RsrpCell(this.raw);
+
+  final String? raw;
+
+  static Color _color(String raw) {
+    final n = numeric(raw);
+    if (n == null) return CpeColors.muted;
+    if (n > -85) return CpeColors.good;
+    if (n > -100) return CpeColors.warn;
+    return CpeColors.danger;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = raw ?? '--';
+    final tint = _color(text);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 8),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: tint,
+          fontWeight: FontWeight.w800,
+          fontSize: 13,
         ),
       ),
     );
