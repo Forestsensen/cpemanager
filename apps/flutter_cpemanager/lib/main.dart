@@ -1077,22 +1077,34 @@ class PccWorkspace extends StatelessWidget {
           // ── 2. SIM卡AMBR ──
           _SimAmbrPanel(model: model),
           const SizedBox(height: 10),
-          // ── 4. 当前小区 (Cell Info) - 2x3 grid ──
+          // ── 4. 当前小区 (Cell Info) - 3x2 grid with subLabels ──
           _SectionCard(
             title: '当前小区',
-            child: _MetricGrid2x(items: [
-              ...model.primaryItems.take(3),
-              ...model.identityItems.take(3),
-            ]),
+            child: _MetricGrid3x(
+              items: [
+                ...model.primaryItems.take(3),       // Band, PCI, ARFCN
+                model.identityItems.first,           // gNB-Cell
+                if (model.primaryItems.length > 4) model.primaryItems[4], // TAC
+                if (model.primaryItems.length > 3) model.primaryItems[3], // DL BW
+              ],
+              subLabels: const {
+                '5G 频段': '频段', 'NR_Band': '频段',
+                '物理小区': '小区码', 'PCI_NBR': '小区码',
+                '频点': '频点号', 'EARFCN_NBR': '频点号',
+                'gNB - Cell': '小区号', 'gNB_Cell': '小区号',
+                'TAC 十进制': '跟踪区', 'TAC': '跟踪区',
+                '下行带宽': '下行带宽', 'DlBandWidth': '下行带宽',
+              },
+            ),
           ),
           const SizedBox(height: 10),
-          // ── 5. 射频质量 (RF Quality) - 2x3 grid with bars ──
+          // ── 5. 射频质量 (RF Quality) - 3+2 layout with bars ──
           _SectionCard(
             title: '射频质量',
             child: _RfGrid(items: model.signalBars),
           ),
           const SizedBox(height: 10),
-          // ── 6. 当前功率 (Power) - grid ──
+          // ── 6. 当前功率 (Power) - 4+2 layout with bars ──
           _SectionCard(
             title: '当前功率',
             child: _PowerGrid(model: model),
@@ -1215,77 +1227,116 @@ class _SimAmbrPanel extends StatelessWidget {
   );
 }
 
-/// 4. Metric tile (label top, value bottom)
+/// 4. Metric tile (label top, value bottom) — with optional Chinese subLabel
 class _MetricTile extends StatelessWidget {
-  const _MetricTile({required this.label, required this.value});
-  final String label; final String value;
+  const _MetricTile({required this.label, required this.value, this.subLabel});
+  final String label; final String value; final String? subLabel;
 
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
     decoration: BoxDecoration(color: CpeColors.tile, borderRadius: BorderRadius.circular(8)),
     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Text(label, style: TextStyle(color: CpeColors.muted, fontSize: 11, fontWeight: FontWeight.w600)),
+      Text(label, style: TextStyle(color: CpeColors.muted, fontSize: 12, fontWeight: FontWeight.w700)),
+      if (subLabel != null) ...[
+        const SizedBox(height: 2),
+        Text(subLabel!, style: TextStyle(color: CpeColors.muted.withOpacity(0.7), fontSize: 10, fontWeight: FontWeight.w500)),
+      ],
       const SizedBox(height: 4),
       Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: CpeColors.ink, fontSize: 14, fontWeight: FontWeight.w900)),
+          style: TextStyle(color: CpeColors.ink, fontSize: 18, fontWeight: FontWeight.w900)),
     ]),
   );
 }
 
-/// 2-column metric grid using KvItem data
-class _MetricGrid2x extends StatelessWidget {
-  const _MetricGrid2x({required this.items});
+/// 3-column metric grid with Chinese subLabels
+class _MetricGrid3x extends StatelessWidget {
+  const _MetricGrid3x({required this.items, this.subLabels});
   final List<KvItem> items;
+  /// Optional map: English label → Chinese subLabel
+  final Map<String, String>? subLabels;
 
   @override
   Widget build(BuildContext context) => GridView.builder(
     shrinkWrap: true,
     physics: const NeverScrollableScrollPhysics(),
     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-      crossAxisCount: 2,
+      crossAxisCount: 3,
       crossAxisSpacing: 8,
       mainAxisSpacing: 8,
-      mainAxisExtent: 56,
+      mainAxisExtent: 76,
     ),
     itemCount: items.length,
-    itemBuilder: (_, i) => _MetricTile(label: items[i].label, value: items[i].value),
+    itemBuilder: (_, i) => _MetricTile(
+      label: items[i].label,
+      value: items[i].value,
+      subLabel: subLabels?[items[i].label],
+    ),
   );
 }
 
-/// 5. RF Quality grid - tiles with colored progress bar under value
+/// 5. RF Quality grid — 3+2 layout with signal bars and Chinese subLabels
 class _RfGrid extends StatelessWidget {
   const _RfGrid({required this.items});
   final List<BarItem> items;
 
+  static const _subLabels = {
+    'RSRP': '参考功率', 'RSRQ': '参考质量', 'SINR': '信号干扰比',
+    'RSSI': '接收强度', 'CQI': '信道质量',
+  };
+
   @override
-  Widget build(BuildContext context) => GridView.builder(
-    shrinkWrap: true,
-    physics: const NeverScrollableScrollPhysics(),
-    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-      crossAxisCount: 2,
-      crossAxisSpacing: 8,
-      mainAxisSpacing: 8,
-      mainAxisExtent: 64,
-    ),
-    itemCount: items.length,
-    itemBuilder: (_, i) => _RfTile(item: items[i]),
-  );
+  Widget build(BuildContext context) {
+    final top = items.take(3).toList();  // RSRP, RSRQ, SINR
+    final bot = items.length > 3 ? items.sublist(3) : <BarItem>[]; // RSSI, CQI
+    return Column(
+      children: [
+        // Row 1: 3 items
+        Row(
+          children: [
+            for (int i = 0; i < top.length; i++) ...[
+              if (i > 0) const SizedBox(width: 8),
+              Expanded(child: _RfTile(item: top[i], subLabel: _subLabels[top[i].label])),
+            ],
+          ],
+        ),
+        if (bot.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          // Row 2: 2 items, centered
+          Row(
+            children: [
+              const Spacer(flex: 1),
+              for (int i = 0; i < bot.length; i++) ...[
+                if (i > 0) const SizedBox(width: 8),
+                Expanded(flex: 2, child: _RfTile(item: bot[i], subLabel: _subLabels[bot[i].label])),
+              ],
+              const Spacer(flex: 1),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
 }
 
 class _RfTile extends StatelessWidget {
-  const _RfTile({required this.item});
+  const _RfTile({required this.item, this.subLabel});
   final BarItem item;
+  final String? subLabel;
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
     decoration: BoxDecoration(color: CpeColors.tile, borderRadius: BorderRadius.circular(8)),
     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Text(item.label, style: TextStyle(color: CpeColors.muted, fontSize: 11, fontWeight: FontWeight.w600)),
-      const SizedBox(height: 3),
-      Text(item.value, style: TextStyle(color: item.color, fontSize: 16, fontWeight: FontWeight.w900)),
-      const SizedBox(height: 4),
+      Text(item.label, style: TextStyle(color: CpeColors.muted, fontSize: 12, fontWeight: FontWeight.w700)),
+      if (subLabel != null) ...[
+        const SizedBox(height: 2),
+        Text(subLabel!, style: TextStyle(color: CpeColors.muted.withOpacity(0.7), fontSize: 10, fontWeight: FontWeight.w500)),
+      ],
+      const SizedBox(height: 5),
+      Text(item.value, style: TextStyle(color: item.color, fontSize: 18, fontWeight: FontWeight.w900)),
+      const SizedBox(height: 5),
       ClipRRect(
         borderRadius: BorderRadius.circular(2),
         child: LinearProgressIndicator(
@@ -1298,65 +1349,121 @@ class _RfTile extends StatelessWidget {
   );
 }
 
-/// 6. Power grid - dBm values with color coding
+/// 6. Power grid — 4+2 layout: power items with bars + BW items without
 class _PowerGrid extends StatelessWidget {
   const _PowerGrid({required this.model});
   final DashboardModel model;
 
-  static Color _powerColor(String val) {
-    if (!val.contains('dBm')) return CpeColors.ink;
-    final n = double.tryParse(val.replaceAll(RegExp(r'[^\d.\-]'), '')) ?? 0;
-    if (n >= 23) return const Color(0xffe74c3c);
-    if (n >= 18) return const Color(0xffe67e22);
-    if (n >= 12) return const Color(0xffd4a017);
-    return const Color(0xff30a14e);
+  static const _subLabels = {
+    'PUSCH 发射功率': '上行发射', 'PUCCH 发射功率': '上行控制',
+    'SRS 探测功率': '探测', 'PRACH 接入功率': '接入',
+    'TM': '传输模式', 'DL BW': '下行带宽', 'UL BW': '上行带宽',
+  };
+
+  /// Normalize dBm value to 0‑1 progress (range: -30 to 30)
+  static double _powerProgress(String val) {
+    final n = double.tryParse(val.replaceAll(RegExp(r'[^\d.\-]'), ''));
+    if (n == null) return 0;
+    return normalize(n, -30, 30);
   }
 
   @override
   Widget build(BuildContext context) {
-    // 收集所有功率相关项（真实数据 + 带宽补充）
-    final items = <KvItem>[
-      ...model.powerItems,
-      // 从 primaryItems 中提取带宽信息作为补充（DL/UL BW）
+    // Row 1: power items (with progress bars)
+    final power = <KvItem>[...model.powerItems];
+    // Row 2: bandwidth items (no bars)
+    final bw = <KvItem>[
       if (model.primaryItems.length > 3)
         KvItem('DL BW', model.primaryItems[3].value),
-      // 尝试从 modulationItems 获取 UL BW
       if (model.uplinkItems.isNotEmpty && model.uplinkItems.length > 3)
         KvItem('UL BW', model.uplinkItems[3].value),
     ];
-    // 保证至少有 powerItems 的数量，不足补空位
-    while (items.length < model.powerItems.length) {
-      items.add(KvItem('', ''));
-    }
-    return Wrap(spacing: 8, runSpacing: 8, children: [
-      for (final item in items)
-        if (item.label.isNotEmpty)
-          SizedBox(width: 90, child: _PTile(label: item.label, value: item.value)),
-    ]);
+    return Column(
+      children: [
+        // Row 1: power items in 4-column grid
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 4,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            mainAxisExtent: 80,
+          ),
+          itemCount: power.length,
+          itemBuilder: (_, i) => _PTile(
+            label: power[i].label,
+            value: power[i].value,
+            subLabel: _subLabels[power[i].label],
+            showBar: true,
+          ),
+        ),
+        if (bw.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          // Row 2: BW items side by side (no bars)
+          Row(
+            children: [
+              for (int i = 0; i < bw.length; i++) ...[
+                if (i > 0) const SizedBox(width: 8),
+                Expanded(child: _PTile(
+                  label: bw[i].label,
+                  value: bw[i].value,
+                  subLabel: _subLabels[bw[i].label],
+                  showBar: false,
+                )),
+              ],
+              // Fill remaining space if only 1 BW item
+              if (bw.length < 2) const Spacer(),
+            ],
+          ),
+        ],
+      ],
+    );
   }
 }
 
 class _PTile extends StatelessWidget {
-  const _PTile({required this.label, required this.value});
-  final String label; final String value;
+  const _PTile({required this.label, required this.value, this.subLabel, this.showBar = true});
+  final String label; final String value; final String? subLabel; final bool showBar;
 
   Color get c {
     if (!value.contains('dBm') && !value.startsWith('TM')) return CpeColors.ink;
     final n = double.tryParse(value.replaceAll(RegExp(r'[^\d.\-]'), '')) ?? 0;
-    if (n >= 23) return const Color(0xffe74c3c);
-    if (n >= 18) return const Color(0xffe67e22);
-    if (n >= 12) return const Color(0xffd4a017);
-    return const Color(0xff30a14e);
+    if (n >= 23) return const Color(0xffe74c3c);  // red — too hot
+    if (n >= 18) return const Color(0xffe67e22);  // orange
+    if (n >= 12) return const Color(0xffd4a017);  // amber
+    return const Color(0xff30a14e);                // green — normal
+  }
+
+  double get _progress {
+    final n = double.tryParse(value.replaceAll(RegExp(r'[^\d.\-]'), ''));
+    if (n == null) return 0;
+    return normalize(n, -30, 30).clamp(0.0, 1.0);
   }
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
     decoration: BoxDecoration(color: CpeColors.tile, borderRadius: BorderRadius.circular(8)),
-    child: Column(children: [
-      Text(label, style: TextStyle(color: CpeColors.muted, fontSize: 10, fontWeight: FontWeight.w600)),
-      const SizedBox(height: 3),
-      Text(value, style: TextStyle(color: c, fontSize: 13, fontWeight: FontWeight.w900)),
+    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+      Text(label, style: TextStyle(color: CpeColors.muted, fontSize: 10, fontWeight: FontWeight.w700)),
+      if (subLabel != null) ...[
+        const SizedBox(height: 2),
+        Text(subLabel!, style: TextStyle(color: CpeColors.muted.withOpacity(0.7), fontSize: 9, fontWeight: FontWeight.w500)),
+      ],
+      const SizedBox(height: 4),
+      Text(value, style: TextStyle(color: c, fontSize: 14, fontWeight: FontWeight.w900)),
+      if (showBar) ...[
+        const SizedBox(height: 5),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(2),
+          child: LinearProgressIndicator(
+            value: _progress, minHeight: 3,
+            backgroundColor: CpeColors.input,
+            valueColor: AlwaysStoppedAnimation(c),
+          ),
+        ),
+      ],
     ]),
   );
 }
@@ -2870,7 +2977,10 @@ class BarItem {
       label: 'RSRP',
       value: value,
       progress: normalize(number, -120, -70),
-      color: number != null && number > -95 ? CpeColors.good : CpeColors.warn,
+      color: number == null ? CpeColors.warn
+          : number > -85 ? CpeColors.good   // excellent
+          : number > -100 ? CpeColors.warn   // medium
+          : const Color(0xffe74c3c),          // weak — red
     );
   }
 
@@ -2880,7 +2990,10 @@ class BarItem {
       label: 'RSRQ',
       value: value,
       progress: normalize(number, -20, -6),
-      color: number != null && number > -12 ? CpeColors.good : CpeColors.warn,
+      color: number == null ? CpeColors.warn
+          : number > -10 ? CpeColors.good
+          : number > -15 ? CpeColors.warn
+          : const Color(0xffe74c3c),
     );
   }
 
@@ -2890,7 +3003,10 @@ class BarItem {
       label: 'SINR',
       value: value,
       progress: normalize(number, 0, 30),
-      color: number != null && number > 12 ? CpeColors.good : CpeColors.warn,
+      color: number == null ? CpeColors.warn
+          : number > 12 ? CpeColors.good
+          : number > 6 ? CpeColors.warn
+          : const Color(0xffe74c3c),
     );
   }
 
@@ -2900,7 +3016,10 @@ class BarItem {
       label: 'RSSI',
       value: value,
       progress: normalize(number, -100, -45),
-      color: CpeColors.good,
+      color: number == null ? CpeColors.warn
+          : number > -65 ? CpeColors.good
+          : number > -80 ? CpeColors.warn
+          : const Color(0xffe74c3c),
     );
   }
 
@@ -2910,7 +3029,10 @@ class BarItem {
       label: 'CQI',
       value: value,
       progress: normalize(number, 0, 15),
-      color: CpeColors.good,
+      color: number == null ? CpeColors.warn
+          : number >= 10 ? CpeColors.good
+          : number >= 7 ? CpeColors.warn
+          : const Color(0xffe74c3c),
     );
   }
 
