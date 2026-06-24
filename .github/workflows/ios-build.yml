@@ -33,6 +33,10 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}/ios
         run: pod install --repo-update
 
+      - name: Clean build cache
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: flutter clean
+
       - name: Build iOS (no codesign)
         working-directory: ${{ env.PROJECT_DIR }}
         run: flutter build ios --release --no-codesign --no-tree-shake-icons 
