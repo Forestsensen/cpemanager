@@ -1235,7 +1235,11 @@ class _MetricTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-    decoration: BoxDecoration(color: CpeColors.tile, borderRadius: BorderRadius.circular(8)),
+    decoration: BoxDecoration(
+      color: CpeColors.tile,
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: CpeColors.border.withOpacity(0.5), width: 0.5),
+    ),
     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
       Text(label, style: TextStyle(color: CpeColors.muted, fontSize: 12, fontWeight: FontWeight.w700)),
       if (subLabel != null) ...[
@@ -1327,7 +1331,11 @@ class _RfTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-    decoration: BoxDecoration(color: CpeColors.tile, borderRadius: BorderRadius.circular(8)),
+    decoration: BoxDecoration(
+      color: CpeColors.tile,
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: CpeColors.border.withOpacity(0.5), width: 0.5),
+    ),
     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
       Text(item.label, style: TextStyle(color: CpeColors.muted, fontSize: 12, fontWeight: FontWeight.w700)),
       if (subLabel != null) ...[
@@ -1355,9 +1363,11 @@ class _PowerGrid extends StatelessWidget {
   final DashboardModel model;
 
   static const _subLabels = {
-    'PUSCH 发射功率': '上行发射', 'PUCCH 发射功率': '上行控制',
-    'SRS 探测功率': '探测', 'PRACH 接入功率': '接入',
+    'PUSCH': '上行发射', 'PUCCH': '上行控制',
+    'SRS': '探测', 'PRACH': '接入',
     'TM': '传输模式', 'DL BW': '下行带宽', 'UL BW': '上行带宽',
+    'PUSCH_TX_Power': '上行发射', 'PUCCH_TX_Power': '上行控制',
+    'SRS_TX_Power': '探测', 'PRACH_TX_Power': '接入',
   };
 
   /// Normalize dBm value to 0‑1 progress (range: -30 to 30)
@@ -1378,14 +1388,15 @@ class _PowerGrid extends StatelessWidget {
       if (model.uplinkItems.isNotEmpty && model.uplinkItems.length > 3)
         KvItem('UL BW', model.uplinkItems[3].value),
     ];
+    final colCount = power.isEmpty ? 1 : power.length.clamp(1, 4);
     return Column(
       children: [
-        // Row 1: power items in 4-column grid
+        // Row 1: power items in dynamic column grid
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 4,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: colCount,
             crossAxisSpacing: 8,
             mainAxisSpacing: 8,
             mainAxisExtent: 80,
@@ -1444,7 +1455,11 @@ class _PTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-    decoration: BoxDecoration(color: CpeColors.tile, borderRadius: BorderRadius.circular(8)),
+    decoration: BoxDecoration(
+      color: CpeColors.tile,
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: CpeColors.border.withOpacity(0.5), width: 0.5),
+    ),
     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
       Text(label, style: TextStyle(color: CpeColors.muted, fontSize: 10, fontWeight: FontWeight.w700)),
       if (subLabel != null) ...[
@@ -2885,10 +2900,14 @@ class DashboardModel {
         ),
       ],
       powerItems: [
-        KvItem(metricLabel(displayMode, 'PUSCH 发射功率', 'PUSCH_TX_Power'),
+        KvItem(metricLabel(displayMode, 'PUSCH', 'PUSCH_TX_Power'),
             dbmText(base['PUSCH_TX_Power'])),
-        KvItem(metricLabel(displayMode, 'PUCCH 发射功率', 'PUCCH_TX_Power'),
+        KvItem(metricLabel(displayMode, 'PUCCH', 'PUCCH_TX_Power'),
             dbmText(base['PUCCH_TX_Power'])),
+        KvItem(metricLabel(displayMode, 'SRS', 'SRS_TX_Power'),
+            dbmText(base['SRS_TX_Power'])),
+        KvItem(metricLabel(displayMode, 'PRACH', 'PRACH_TX_Power'),
+            dbmText(base['PRACH_TX_Power'])),
       ],
       simItems: [
         KvItem(metricLabel(displayMode, '上行签约带宽', 'UL_AMBR'),
