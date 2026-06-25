@@ -33,25 +33,13 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}/ios
         run: pod install --repo-update
 
-      - name: Build Flutter iOS (no codesign)
+      - name: Build iOS (no codesign)
         working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          cd ios
-          xcodebuild -workspace Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath ../build/ios \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            COMPILER_INDEX_STORE_ENABLE=NO
-          cd ..
+        run: flutter build ios --release --no-codesign --no-tree-shake-icons
 
       - name: Package IPA (for TrollStore)
-        working-directory: ${{ env.PROJECT_DIR }}
+        working-directory: ${{ env.PROJECT_DIR }}/build/ios/iphoneos
         run: |
-          cd build/ios/iphoneos
           mkdir -p Payload
           cp -r Runner.app Payload/
           zip -r CPEManager.ipa Payload/
