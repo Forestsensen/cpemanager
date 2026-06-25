@@ -1992,29 +1992,6 @@ class CellTable extends StatelessWidget {
   }
 }
 
-class _SinrCell extends StatelessWidget {
-  const _SinrCell(this.value);
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = CellTable._sinrColor(value);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 8),
-      child: Text(
-        value,
-        textAlign: TextAlign.center,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-}
-
 class DenseKvGrid extends StatelessWidget {
   const DenseKvGrid({
     required this.items,
