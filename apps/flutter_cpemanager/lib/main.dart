@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 
 import 'package:flutter/material.dart';
 
@@ -12,8 +14,8 @@ void main() {
 }
 
 enum CpeVendor {
-  huawei('Huawei', '华为'),
-  fiberhome('Fiberhome', '烽火');
+  fiberhome('Fiberhome', '烽火'),
+  huawei('Huawei', '华为');
 
   const CpeVendor(this.code, this.label);
 
@@ -29,6 +31,16 @@ enum DisplayMode {
 
   final String label;
   final String description;
+}
+
+enum AppThemeMode {
+  system('跟随系统', Icons.brightness_6),
+  light('浅色模式', Icons.wb_sunny),
+  dark('深色模式', Icons.nights_stay);
+
+  const AppThemeMode(this.label, this.icon);
+  final String label;
+  final IconData icon;
 }
 
 class CpeDeviceProfile {
@@ -49,18 +61,18 @@ class CpeDeviceProfile {
 
 const cpeDeviceProfiles = <CpeDeviceProfile>[
   CpeDeviceProfile(
-    vendor: CpeVendor.huawei,
-    title: '华为 CPE',
-    protocol: 'Huawei XML API',
-    description: '适用于华为/智选类 CPE，使用 challenge_login 和 XML 状态接口。',
-    icon: Icons.router_outlined,
-  ),
-  CpeDeviceProfile(
     vendor: CpeVendor.fiberhome,
     title: '烽火 CPE',
     protocol: 'FHNCAPIS / FHTOOLAPIS',
     description: '适用于烽火 LG61xx 系列，使用 JSON 接口读取信号、SIM 与锁定状态。',
     icon: Icons.hub_outlined,
+  ),
+  CpeDeviceProfile(
+    vendor: CpeVendor.huawei,
+    title: '华为 CPE',
+    protocol: 'Huawei XML API',
+    description: '适用于华为/智选类 CPE，使用 challenge_login 和 XML 状态接口。',
+    icon: Icons.router_outlined,
   ),
 ];
 
@@ -68,47 +80,98 @@ CpeDeviceProfile cpeProfile(CpeVendor vendor) {
   return cpeDeviceProfiles.firstWhere((item) => item.vendor == vendor);
 }
 
-class CpeManagerApp extends StatelessWidget {
+class CpeManagerApp extends StatefulWidget {
   const CpeManagerApp({super.key});
+  @override
+  State<CpeManagerApp> createState() => _CpeManagerAppState();
+}
+
+class _CpeManagerAppState extends State<CpeManagerApp> {
+  AppThemeMode _themeMode = AppThemeMode.dark;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTheme();
+  }
+
+  Future<void> _loadTheme() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File(dir.path + '/cpe_credentials.json');
+      if (!await file.exists()) return;
+      final data = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      final saved = data['themeMode'] as String?;
+      if (saved != null) {
+        final match = AppThemeMode.values.where((m) => m.name == saved);
+        if (match.isNotEmpty) {
+          setState(() {
+            _themeMode = match.first;
+            CpeColors.isDark = _effectiveIsDark;
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  bool get _effectiveIsDark {
+    if (_themeMode == AppThemeMode.system) {
+      return WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark;
+    }
+    return _themeMode == AppThemeMode.dark;
+  }
+
+  void _setThemeMode(AppThemeMode mode) {
+    setState(() {
+      _themeMode = mode;
+      CpeColors.isDark = _effectiveIsDark;
+    });
+    _saveTheme(mode);
+  }
+
+  Future<void> _saveTheme(AppThemeMode mode) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File(dir.path + '/cpe_credentials.json');
+      Map<String, dynamic> data = {};
+      if (await file.exists()) {
+        data = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      }
+      data['themeMode'] = mode.name;
+      await file.writeAsString(jsonEncode(data));
+    } catch (_) {}
+  }
 
   @override
   Widget build(BuildContext context) {
-    const seed = CpeColors.primary;
+    CpeColors.isDark = _effectiveIsDark;
+    final seed = CpeColors.primary;
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'CPE Manager',
+      themeMode: _themeMode == AppThemeMode.system ? ThemeMode.system
+          : _themeMode == AppThemeMode.light ? ThemeMode.light : ThemeMode.dark,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: seed,
-          brightness: Brightness.dark,
-        ),
+        colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.light),
         scaffoldBackgroundColor: CpeColors.background,
         useMaterial3: true,
-        fontFamilyFallback: const ['PingFang SC', 'Noto Sans CJK SC'],
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: CpeColors.input,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: CpeColors.border),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: CpeColors.primary, width: 1.3),
-          ),
-        ),
+        fontFamilyFallback: ['PingFang SC', 'Noto Sans CJK SC'],
       ),
-      home: const HomeScreen(),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark),
+        scaffoldBackgroundColor: CpeColors.background,
+        useMaterial3: true,
+        fontFamilyFallback: ['PingFang SC', 'Noto Sans CJK SC'],
+      ),
+      home: HomeScreen(onThemeModeChanged: _setThemeMode, themeMode: _themeMode),
     );
   }
 }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
-
+  const HomeScreen({this.onThemeModeChanged, this.themeMode, super.key});
+  final ValueChanged<AppThemeMode>? onThemeModeChanged;
+  final AppThemeMode? themeMode;
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -125,7 +188,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final lteLockPciController = TextEditingController();
   final scrollController = ScrollController();
 
-  CpeVendor vendor = CpeVendor.huawei;
+  CpeVendor vendor = CpeVendor.fiberhome;
   DisplayMode displayMode = DisplayMode.simple;
   int tabIndex = 1;
   Map<String, dynamic>? snapshot;
@@ -142,12 +205,55 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    _loadSavedCredentials();
+    refreshTimer = Timer.periodic(const Duration(seconds: 2), (_) {
       if (!mounted || !autoRefresh || snapshot == null || busy) {
         return;
       }
       unawaited(refreshSnapshot(silent: true));
     });
+  }
+
+  Future<File> get _credFile async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/cpe_credentials.json');
+  }
+
+  Future<void> _loadSavedCredentials() async {
+    try {
+      final file = await _credFile;
+      if (!await file.exists()) return;
+      final data = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      if (data['host'] != null && (data['host'] as String).isNotEmpty) {
+        hostController.text = data['host'];
+      }
+      if (data['username'] != null && (data['username'] as String).isNotEmpty) {
+        usernameController.text = data['username'];
+      }
+      if (data['password'] != null && (data['password'] as String).isNotEmpty) {
+        passwordController.text = data['password'];
+      }
+      if (data['vendor'] != null) {
+        final match = CpeVendor.values.where((v) => v.code == data['vendor']);
+        if (match.isNotEmpty) {
+          setState(() {
+            vendor = match.first;
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveCredentials() async {
+    try {
+      final file = await _credFile;
+      await file.writeAsString(jsonEncode({
+        'host': hostController.text.trim(),
+        'username': usernameController.text.trim(),
+        'password': passwordController.text,
+        'vendor': vendor.code,
+      }));
+    } catch (_) {}
   }
 
   @override
@@ -260,7 +366,12 @@ class _HomeScreenState extends State<HomeScreen> {
           setState(() {
             snapshot = next;
             neighbors = fiberhomeNeighbors(next);
-            rawOutput = const JsonEncoder.withIndent('  ').convert(next);
+            final json = const JsonEncoder.withIndent('  ').convert(next);
+            final baseInfo = next['baseInfo'];
+            final keysDiag = baseInfo is Map
+                ? 'BASEINFO KEYS (${baseInfo.length}): ${baseInfo.keys.toList()}\n'
+                : 'BASEINFO is not a Map: ${baseInfo.runtimeType}\n';
+            rawOutput = '$keysDiag\n$json';
             lastUpdated = DateTime.now();
           });
         }
@@ -433,6 +544,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: CustomScrollView(
           controller: scrollController,
           slivers: [
+            if (tabIndex == 3)
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
@@ -444,6 +556,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   autoRefresh: autoRefresh,
                   lastUpdated: lastUpdated,
                   displayMode: displayMode,
+                  themeMode: widget.themeMode ?? AppThemeMode.dark,
+                  onThemeModeChanged: widget.onThemeModeChanged,
                   onRefresh: () => refreshSnapshot(),
                   onAutoRefreshChanged: (value) {
                     setState(() {
@@ -484,13 +598,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   IndexedStack(
                     index: tabIndex,
                     children: [
-                      LoginWorkspace(
-                        vendor: vendor,
-                        hostController: hostController,
-                        usernameController: usernameController,
-                        passwordController: passwordController,
-                        onRead: busy ? null : () => refreshSnapshot(),
-                      ),
                       PccWorkspace(model: model),
                       CarrierWorkspace(model: model),
                       LockWorkspace(
@@ -510,7 +617,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         onFiberhomeDualCell:
                             busy ? null : setFiberhomeDualCellLock,
                       ),
-                      SpeedWorkspace(model: model, rawOutput: rawOutput),
+                      LoginWorkspace(
+                        vendor: vendor,
+                        hostController: hostController,
+                        usernameController: usernameController,
+                        passwordController: passwordController,
+                        onRead: busy ? null : () { _saveCredentials(); refreshSnapshot(); },
+                        rawOutput: rawOutput,
+                      ),
                     ],
                   ),
                 ],
@@ -533,14 +647,9 @@ class _HomeScreenState extends State<HomeScreen> {
         indicatorColor: CpeColors.tileAccent,
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.account_circle_outlined),
-            selectedIcon: Icon(Icons.account_circle),
-            label: '登录',
-          ),
-          NavigationDestination(
             icon: Icon(Icons.tune),
             selectedIcon: Icon(Icons.tune),
-            label: 'PCC',
+            label: '连接',
           ),
           NavigationDestination(
             icon: Icon(Icons.cell_tower_outlined),
@@ -553,9 +662,9 @@ class _HomeScreenState extends State<HomeScreen> {
             label: '锁频',
           ),
           NavigationDestination(
-            icon: Icon(Icons.speed_outlined),
-            selectedIcon: Icon(Icons.speed),
-            label: '速率',
+            icon: Icon(Icons.account_circle_outlined),
+            selectedIcon: Icon(Icons.account_circle),
+            label: '登录',
           ),
         ],
       ),
@@ -576,6 +685,8 @@ class HeaderPanel extends StatelessWidget {
     required this.onAutoRefreshChanged,
     required this.onDisplayModeChanged,
     required this.onVendorChanged,
+    this.themeMode = AppThemeMode.dark,
+    this.onThemeModeChanged,
     super.key,
   });
 
@@ -590,6 +701,8 @@ class HeaderPanel extends StatelessWidget {
   final ValueChanged<bool> onAutoRefreshChanged;
   final ValueChanged<DisplayMode> onDisplayModeChanged;
   final ValueChanged<CpeVendor> onVendorChanged;
+  final AppThemeMode themeMode;
+  final ValueChanged<AppThemeMode>? onThemeModeChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -616,7 +729,7 @@ class HeaderPanel extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       model.subtitle,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: CpeColors.muted,
                         fontWeight: FontWeight.w600,
                       ),
@@ -628,6 +741,20 @@ class HeaderPanel extends StatelessWidget {
                 tooltip: busy ? busyLabel : '立即刷新',
                 onPressed: busy ? null : onRefresh,
                 icon: const Icon(Icons.refresh),
+              ),
+              const SizedBox(width: 8),
+              Tooltip(
+                message: themeMode.label,
+                child: IconButton.filledTonal(
+                  onPressed: onThemeModeChanged != null
+                      ? () {
+                          final next = AppThemeMode.values[
+                              (themeMode.index + 1) % AppThemeMode.values.length];
+                          onThemeModeChanged!(next);
+                        }
+                      : null,
+                  icon: Icon(themeMode.icon, size: 20),
+                ),
               ),
             ],
           ),
@@ -681,7 +808,7 @@ class DeviceProfileSelector extends StatelessWidget {
     return DropdownButtonFormField<CpeVendor>(
       initialValue: vendor,
       isExpanded: true,
-      decoration: const InputDecoration(
+      decoration: InputDecoration(
         labelText: '设备档案',
         prefixIcon: Icon(Icons.router_outlined),
       ),
@@ -698,7 +825,7 @@ class DeviceProfileSelector extends StatelessWidget {
                   '${profile.title} · ${profile.protocol}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: CpeColors.ink,
                     fontWeight: FontWeight.w900,
                   ),
@@ -747,7 +874,7 @@ class HeaderControls extends StatelessWidget {
             autoRefresh ? Icons.sync : Icons.sync_disabled,
             size: 18,
           ),
-          label: Text(autoRefresh ? '5秒自动刷新' : '手动刷新'),
+          label: Text(autoRefresh ? '2秒自动刷新' : '手动刷新'),
         ),
         StatusChip(label: '更新 ${timeText(lastUpdated)}'),
         SegmentedButton<DisplayMode>(
@@ -780,6 +907,7 @@ class LoginWorkspace extends StatelessWidget {
     required this.usernameController,
     required this.passwordController,
     required this.onRead,
+    this.rawOutput = '',
     super.key,
   });
 
@@ -788,6 +916,7 @@ class LoginWorkspace extends StatelessWidget {
   final TextEditingController usernameController;
   final TextEditingController passwordController;
   final VoidCallback? onRead;
+  final String rawOutput;
 
   @override
   Widget build(BuildContext context) {
@@ -809,7 +938,7 @@ class LoginWorkspace extends StatelessWidget {
                 child: TextField(
                   controller: hostController,
                   keyboardType: TextInputType.url,
-                  decoration: const InputDecoration(hintText: '192.168.8.1'),
+                  decoration: InputDecoration(hintText: '192.168.8.1'),
                 ),
               ),
               const SizedBox(height: 12),
@@ -818,7 +947,7 @@ class LoginWorkspace extends StatelessWidget {
                 helper: '默认账号通常为 admin',
                 child: TextField(
                   controller: usernameController,
-                  decoration: const InputDecoration(hintText: 'admin'),
+                  decoration: InputDecoration(hintText: 'admin'),
                 ),
               ),
               const SizedBox(height: 12),
@@ -851,6 +980,22 @@ class LoginWorkspace extends StatelessWidget {
           body:
               '${profile.title} · ${profile.protocol}。后续新增设备时会继续放进这个档案选择器，不需要改变登录流程。',
         ),
+        // Raw snapshot JSON
+        if (rawOutput.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _SectionCard(
+            title: '原始快照 JSON',
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 400),
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  rawOutput,
+                  style: TextStyle(fontFamily: 'monospace', fontSize: 11, height: 1.4, color: CpeColors.muted),
+                ),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -889,7 +1034,7 @@ class DeviceProfileCard extends StatelessWidget {
               children: [
                 Text(
                   profile.title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: CpeColors.ink,
                     fontWeight: FontWeight.w900,
                     fontSize: 16,
@@ -900,7 +1045,7 @@ class DeviceProfileCard extends StatelessWidget {
                   profile.description,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: CpeColors.muted,
                     fontWeight: FontWeight.w600,
                     height: 1.25,
@@ -929,28 +1074,37 @@ class PccWorkspace extends StatelessWidget {
           // ── 1. 连接情况 (Connection Status) ──
           _ConnHeader(model: model),
           const SizedBox(height: 10),
-          // ── 2. 电池状态 (Battery) ──
-          _BatteryRow(model: model),
-          const SizedBox(height: 10),
-          // ── 3. SIM卡AMBR ──
+          // ── 2. SIM卡AMBR ──
           _SimAmbrPanel(model: model),
           const SizedBox(height: 10),
-          // ── 4. 当前小区 (Cell Info) - 2x3 grid ──
+          // ── 4. 当前小区 (Cell Info) - 3x2 grid with subLabels ──
           _SectionCard(
             title: '当前小区',
-            child: _MetricGrid2x(items: [
-              ...model.primaryItems.take(3),
-              ...model.identityItems.take(3),
-            ]),
+            child: _MetricGrid3x(
+              items: [
+                ...model.primaryItems.take(3),       // Band, PCI, ARFCN
+                model.identityItems.first,           // gNB-Cell
+                if (model.primaryItems.length > 4) model.primaryItems[4], // TAC
+                if (model.primaryItems.length > 3) model.primaryItems[3], // DL BW
+              ],
+              subLabels: const {
+                '5G 频段': '频段', 'NR_Band': '频段',
+                '物理小区': '小区码', 'PCI_NBR': '小区码',
+                '频点': '频点号', 'EARFCN_NBR': '频点号',
+                'gNB - Cell': '小区号', 'gNB_Cell': '小区号',
+                'TAC 十进制': '跟踪区', 'TAC': '跟踪区',
+                '下行带宽': '下行带宽', 'DlBandWidth': '下行带宽',
+              },
+            ),
           ),
           const SizedBox(height: 10),
-          // ── 5. 射频质量 (RF Quality) - 2x3 grid with bars ──
+          // ── 5. 射频质量 (RF Quality) - 3+2 layout with bars ──
           _SectionCard(
             title: '射频质量',
             child: _RfGrid(items: model.signalBars),
           ),
           const SizedBox(height: 10),
-          // ── 6. 当前功率 (Power) - grid ──
+          // ── 6. 当前功率 (Power) - 4+2 layout with bars ──
           _SectionCard(
             title: '当前功率',
             child: _PowerGrid(model: model),
@@ -989,7 +1143,7 @@ class _SectionCard extends StatelessWidget {
     ),
     child: title != null
         ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title!, style: const TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w700, fontSize: 14)),
+            Text(title!, style: TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w700, fontSize: 14)),
             const SizedBox(height: 10),
             child,
           ])
@@ -1015,7 +1169,7 @@ class _ConnHeader extends StatelessWidget {
     ),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
-        const Text('连接情况', style: TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w800, fontSize: 15)),
+        Text('连接情况', style: TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w800, fontSize: 15)),
         const Spacer(),
         GestureDetector(
           onTap: () {},
@@ -1048,37 +1202,6 @@ class _Badge extends StatelessWidget {
   );
 }
 
-/// 2. Battery row - two equal cards
-class _BatteryRow extends StatelessWidget {
-  const _BatteryRow({required this.model});
-  final DashboardModel model;
-
-  @override
-  Widget build(BuildContext context) => _SectionCard(
-    title: '电池状态',
-    child: Row(children: [
-      Expanded(child: _BatTile(label: '电池电量', value: '--%')),
-      const SizedBox(width: 10),
-      Expanded(child: _BatTile(label: '当前状态', value: '--')),
-    ]),
-  );
-}
-
-class _BatTile extends StatelessWidget {
-  const _BatTile({required this.label, required this.value});
-  final String label; final String value;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-    decoration: BoxDecoration(color: CpeColors.tile, borderRadius: BorderRadius.circular(8)),
-    child: Column(children: [
-      Text(label, style: const TextStyle(color: CpeColors.muted, fontSize: 11, fontWeight: FontWeight.w600)),
-      const SizedBox(height: 6),
-      Text(value, style: const TextStyle(color: CpeColors.ink, fontSize: 18, fontWeight: FontWeight.w900)),
-    ]),
-  );
-}
 
 /// 3. SIM AMBR panel
 class _SimAmbrPanel extends StatelessWidget {
@@ -1087,92 +1210,141 @@ class _SimAmbrPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => _SectionCard(
-    child: Row(children: [
-      Text('SIM卡AMBR', style: const TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w700, fontSize: 14)),
-      const Spacer(),
-      GestureDetector(
-        onTap: () {},
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          decoration: BoxDecoration(color: CpeColors.accent.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(16)),
-          child: Text('获取', style: TextStyle(color: CpeColors.accent, fontWeight: FontWeight.w600, fontSize: 12)),
-        ),
-      ),
-    ]),
+    title: 'SIM卡AMBR',
+    child: model.simItems.isEmpty
+        ? Text('--', style: TextStyle(color: CpeColors.muted, fontSize: 12))
+        : Column(children: [
+            for (final item in model.simItems)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(children: [
+                  Text(item.label, style: TextStyle(color: CpeColors.muted, fontSize: 12, fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  Text(item.value, style: TextStyle(color: CpeColors.ink, fontSize: 12, fontWeight: FontWeight.w800)),
+                ]),
+              ),
+          ]),
   );
 }
 
-/// 4. Metric tile (label top, value bottom)
+/// 4. Metric tile (label top, value bottom) — with optional Chinese subLabel
 class _MetricTile extends StatelessWidget {
-  const _MetricTile({required this.label, required this.value});
-  final String label; final String value;
+  const _MetricTile({required this.label, required this.value, this.subLabel});
+  final String label; final String value; final String? subLabel;
 
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-    decoration: BoxDecoration(color: CpeColors.tile, borderRadius: BorderRadius.circular(8)),
+    decoration: BoxDecoration(
+      color: CpeColors.tile,
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: CpeColors.border.withOpacity(0.5), width: 0.5),
+    ),
     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Text(label, style: const TextStyle(color: CpeColors.muted, fontSize: 11, fontWeight: FontWeight.w600)),
+      Text(label, style: TextStyle(color: CpeColors.muted, fontSize: 12, fontWeight: FontWeight.w700)),
+      if (subLabel != null) ...[
+        const SizedBox(height: 2),
+        Text(subLabel!, style: TextStyle(color: CpeColors.muted.withOpacity(0.7), fontSize: 10, fontWeight: FontWeight.w500)),
+      ],
       const SizedBox(height: 4),
       Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: CpeColors.ink, fontSize: 14, fontWeight: FontWeight.w900)),
+          style: TextStyle(color: CpeColors.ink, fontSize: 18, fontWeight: FontWeight.w900)),
     ]),
   );
 }
 
-/// 2-column metric grid using KvItem data
-class _MetricGrid2x extends StatelessWidget {
-  const _MetricGrid2x({required this.items});
+/// 3-column metric grid with Chinese subLabels
+class _MetricGrid3x extends StatelessWidget {
+  const _MetricGrid3x({required this.items, this.subLabels});
   final List<KvItem> items;
+  /// Optional map: English label → Chinese subLabel
+  final Map<String, String>? subLabels;
 
   @override
   Widget build(BuildContext context) => GridView.builder(
     shrinkWrap: true,
     physics: const NeverScrollableScrollPhysics(),
     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-      crossAxisCount: 2,
+      crossAxisCount: 3,
       crossAxisSpacing: 8,
       mainAxisSpacing: 8,
-      mainAxisExtent: 56,
+      mainAxisExtent: 76,
     ),
     itemCount: items.length,
-    itemBuilder: (_, i) => _MetricTile(label: items[i].label, value: items[i].value),
+    itemBuilder: (_, i) => _MetricTile(
+      label: items[i].label,
+      value: items[i].value,
+      subLabel: subLabels?[items[i].label],
+    ),
   );
 }
 
-/// 5. RF Quality grid - tiles with colored progress bar under value
+/// 5. RF Quality grid — 3+2 layout with signal bars and Chinese subLabels
 class _RfGrid extends StatelessWidget {
   const _RfGrid({required this.items});
   final List<BarItem> items;
 
+  static const _subLabels = {
+    'RSRP': '参考功率', 'RSRQ': '参考质量', 'SINR': '信号干扰比',
+    'RSSI': '接收强度', 'CQI': '信道质量',
+  };
+
   @override
-  Widget build(BuildContext context) => GridView.builder(
-    shrinkWrap: true,
-    physics: const NeverScrollableScrollPhysics(),
-    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-      crossAxisCount: 2,
-      crossAxisSpacing: 8,
-      mainAxisSpacing: 8,
-      mainAxisExtent: 64,
-    ),
-    itemCount: items.length,
-    itemBuilder: (_, i) => _RfTile(item: items[i]),
-  );
+  Widget build(BuildContext context) {
+    final top = items.take(3).toList();  // RSRP, RSRQ, SINR
+    final bot = items.length > 3 ? items.sublist(3) : <BarItem>[]; // RSSI, CQI
+    return Column(
+      children: [
+        // Row 1: 3 items
+        Row(
+          children: [
+            for (int i = 0; i < top.length; i++) ...[
+              if (i > 0) const SizedBox(width: 8),
+              Expanded(child: _RfTile(item: top[i], subLabel: _subLabels[top[i].label])),
+            ],
+          ],
+        ),
+        if (bot.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          // Row 2: 2 items, centered
+          Row(
+            children: [
+              const Spacer(flex: 1),
+              for (int i = 0; i < bot.length; i++) ...[
+                if (i > 0) const SizedBox(width: 8),
+                Expanded(flex: 2, child: _RfTile(item: bot[i], subLabel: _subLabels[bot[i].label])),
+              ],
+              const Spacer(flex: 1),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
 }
 
 class _RfTile extends StatelessWidget {
-  const _RfTile({required this.item});
+  const _RfTile({required this.item, this.subLabel});
   final BarItem item;
+  final String? subLabel;
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-    decoration: BoxDecoration(color: CpeColors.tile, borderRadius: BorderRadius.circular(8)),
+    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+    decoration: BoxDecoration(
+      color: CpeColors.tile,
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: CpeColors.border.withOpacity(0.5), width: 0.5),
+    ),
     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Text(item.label, style: const TextStyle(color: CpeColors.muted, fontSize: 11, fontWeight: FontWeight.w600)),
-      const SizedBox(height: 3),
-      Text(item.value, style: TextStyle(color: item.color, fontSize: 16, fontWeight: FontWeight.w900)),
-      const SizedBox(height: 4),
+      Text(item.label, style: TextStyle(color: CpeColors.muted, fontSize: 12, fontWeight: FontWeight.w700)),
+      if (subLabel != null) ...[
+        const SizedBox(height: 2),
+        Text(subLabel!, style: TextStyle(color: CpeColors.muted.withOpacity(0.7), fontSize: 10, fontWeight: FontWeight.w500)),
+      ],
+      const SizedBox(height: 5),
+      Text(item.value, style: TextStyle(color: item.color, fontSize: 18, fontWeight: FontWeight.w900)),
+      const SizedBox(height: 5),
       ClipRRect(
         borderRadius: BorderRadius.circular(2),
         child: LinearProgressIndicator(
@@ -1185,56 +1357,128 @@ class _RfTile extends StatelessWidget {
   );
 }
 
-/// 6. Power grid - dBm values with color coding
+/// 6. Power grid — 4+2 layout: power items with bars + BW items without
 class _PowerGrid extends StatelessWidget {
   const _PowerGrid({required this.model});
   final DashboardModel model;
 
-  static Color _powerColor(String val) {
-    if (!val.contains('dBm')) return CpeColors.ink;
-    final n = double.tryParse(val.replaceAll(RegExp(r'[^\d.\-]'), '')) ?? 0;
-    if (n >= 23) return const Color(0xffe74c3c);
-    if (n >= 18) return const Color(0xffe67e22);
-    if (n >= 12) return const Color(0xffd4a017);
-    return const Color(0xff30a14e);
+  static const _subLabels = {
+    'PUSCH': '上行发射', 'PUCCH': '上行控制',
+    'SRS': '探测', 'PRACH': '接入',
+    'TM': '传输模式', 'DL BW': '下行带宽', 'UL BW': '上行带宽',
+    'PUSCH_TX_Power': '上行发射', 'PUCCH_TX_Power': '上行控制',
+    'SRS_TX_Power': '探测', 'PRACH_TX_Power': '接入',
+  };
+
+  /// Normalize dBm value to 0‑1 progress (range: -30 to 30)
+  static double _powerProgress(String val) {
+    final n = double.tryParse(val.replaceAll(RegExp(r'[^\d.\-]'), ''));
+    if (n == null) return 0;
+    return normalize(n, -30, 30);
   }
 
   @override
   Widget build(BuildContext context) {
-    final base = model.powerItems.map((e) => e).toList();
-    while (base.length < 4) base.add(KvItem('--', '--'));
-    return Wrap(spacing: 8, runSpacing: 8, children: [
-      for (final item in base)
-        SizedBox(width: 90, child: _PTile(label: item.label, value: item.value)),
-      // BW + TM placeholders
-      _PTile(label: 'DL BW', value: '--'),
-      _PTile(label: 'UL BW', value: '--'),
-      _PTile(label: 'TM', value: '--'),
-    ]);
+    // Row 1: power items (with progress bars)
+    final power = <KvItem>[...model.powerItems];
+    // Row 2: bandwidth items (no bars)
+    final bw = <KvItem>[
+      if (model.primaryItems.length > 3)
+        KvItem('DL BW', model.primaryItems[3].value),
+      if (model.uplinkItems.isNotEmpty && model.uplinkItems.length > 3)
+        KvItem('UL BW', model.uplinkItems[3].value),
+    ];
+    final colCount = power.isEmpty ? 1 : power.length.clamp(1, 4);
+    return Column(
+      children: [
+        // Row 1: power items in dynamic column grid
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: colCount,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            mainAxisExtent: 80,
+          ),
+          itemCount: power.length,
+          itemBuilder: (_, i) => _PTile(
+            label: power[i].label,
+            value: power[i].value,
+            subLabel: _subLabels[power[i].label],
+            showBar: true,
+          ),
+        ),
+        if (bw.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          // Row 2: BW items side by side (no bars)
+          Row(
+            children: [
+              for (int i = 0; i < bw.length; i++) ...[
+                if (i > 0) const SizedBox(width: 8),
+                Expanded(child: _PTile(
+                  label: bw[i].label,
+                  value: bw[i].value,
+                  subLabel: _subLabels[bw[i].label],
+                  showBar: false,
+                )),
+              ],
+              // Fill remaining space if only 1 BW item
+              if (bw.length < 2) const Spacer(),
+            ],
+          ),
+        ],
+      ],
+    );
   }
 }
 
 class _PTile extends StatelessWidget {
-  const _PTile({required this.label, required this.value});
-  final String label; final String value;
+  const _PTile({required this.label, required this.value, this.subLabel, this.showBar = true});
+  final String label; final String value; final String? subLabel; final bool showBar;
 
   Color get c {
     if (!value.contains('dBm') && !value.startsWith('TM')) return CpeColors.ink;
     final n = double.tryParse(value.replaceAll(RegExp(r'[^\d.\-]'), '')) ?? 0;
-    if (n >= 23) return const Color(0xffe74c3c);
-    if (n >= 18) return const Color(0xffe67e22);
-    if (n >= 12) return const Color(0xffd4a017);
-    return const Color(0xff30a14e);
+    if (n >= 23) return const Color(0xffe74c3c);  // red — too hot
+    if (n >= 18) return const Color(0xffe67e22);  // orange
+    if (n >= 12) return const Color(0xffd4a017);  // amber
+    return const Color(0xff30a14e);                // green — normal
+  }
+
+  double get _progress {
+    final n = double.tryParse(value.replaceAll(RegExp(r'[^\d.\-]'), ''));
+    if (n == null) return 0;
+    return normalize(n, -30, 30).clamp(0.0, 1.0);
   }
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
-    decoration: BoxDecoration(color: CpeColors.tile, borderRadius: BorderRadius.circular(8)),
-    child: Column(children: [
-      Text(label, style: const TextStyle(color: CpeColors.muted, fontSize: 10, fontWeight: FontWeight.w600)),
-      const SizedBox(height: 3),
-      Text(value, style: TextStyle(color: c, fontSize: 13, fontWeight: FontWeight.w900)),
+    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+    decoration: BoxDecoration(
+      color: CpeColors.tile,
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: CpeColors.border.withOpacity(0.5), width: 0.5),
+    ),
+    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+      Text(label, style: TextStyle(color: CpeColors.muted, fontSize: 10, fontWeight: FontWeight.w700)),
+      if (subLabel != null) ...[
+        const SizedBox(height: 2),
+        Text(subLabel!, style: TextStyle(color: CpeColors.muted.withOpacity(0.7), fontSize: 9, fontWeight: FontWeight.w500)),
+      ],
+      const SizedBox(height: 4),
+      Text(value, style: TextStyle(color: c, fontSize: 14, fontWeight: FontWeight.w900)),
+      if (showBar) ...[
+        const SizedBox(height: 5),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(2),
+          child: LinearProgressIndicator(
+            value: _progress, minHeight: 3,
+            backgroundColor: CpeColors.input,
+            valueColor: AlwaysStoppedAnimation(c),
+          ),
+        ),
+      ],
     ]),
   );
 }
@@ -1249,15 +1493,15 @@ class _LinkInfoRow extends StatelessWidget {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Expanded(child: _SectionCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('下行链路', style: TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w700, fontSize: 13)),
+        Text('下行链路', style: TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w700, fontSize: 13)),
         const SizedBox(height: 8),
-        for (final it in model.downlinkItems.take(2)) Padding(padding: const EdgeInsets.only(bottom: 3), child: _ILine(it)),
+        for (final it in model.downlinkItems) Padding(padding: const EdgeInsets.only(bottom: 3), child: _ILine(it)),
       ]))),
       const SizedBox(width: 10),
       Expanded(child: _SectionCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('上行链路', style: TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w700, fontSize: 13)),
+        Text('上行链路', style: TextStyle(color: CpeColors.ink, fontWeight: FontWeight.w700, fontSize: 13)),
         const SizedBox(height: 8),
-        for (final it in model.uplinkItems.take(2)) Padding(padding: const EdgeInsets.only(bottom: 3), child: _ILine(it)),
+        for (final it in model.uplinkItems) Padding(padding: const EdgeInsets.only(bottom: 3), child: _ILine(it)),
       ]))),
     ],
   );
@@ -1269,9 +1513,9 @@ class _ILine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(children: [
-    Text(item.label, style: const TextStyle(color: CpeColors.muted, fontSize: 12, fontWeight: FontWeight.w600)),
+    Text(item.label, style: TextStyle(color: CpeColors.muted, fontSize: 12, fontWeight: FontWeight.w600)),
     const Spacer(),
-    Text(item.value, style: const TextStyle(color: CpeColors.ink, fontSize: 12, fontWeight: FontWeight.w800)),
+    Text(item.value, style: TextStyle(color: CpeColors.ink, fontSize: 12, fontWeight: FontWeight.w800)),
   ]);
 }
 
@@ -1280,36 +1524,53 @@ class _DeviceGrid extends StatelessWidget {
   const _DeviceGrid({required this.model});
   final DashboardModel model;
 
-  List<_DI> get _rows {
-    final r = <_DI>[];
-    r.add(_DI('设备型号', model.subtitle.split('/').first.trim()));
-    r.add(_DI('WLAN接入', '--'));
-    r.add(_DI('当日流量', model.trafficItems.isNotEmpty ? model.trafficItems[0].value : '--'));
-    r.add(_DI('软件版本', model.identityItems.length > 3 ? model.identityItems[3].value : '--'));
-    r.add(_DI('上次空口日期', '--'));
-    r.add(_DI('下载速率', model.downloadRate));
-    r.add(_DI('上传速率', model.uploadRate));
-    r.add(_DI('本次下载', model.trafficItems.length > 3 ? model.trafficItems[3].value : '--'));
-    r.add(_DI('本次上传', model.trafficItems.length > 4 ? model.trafficItems[4].value : '--'));
-    r.add(_DI('当月下载', model.vendor == CpeVendor.fiberhome && model.trafficItems.length > 4 ? model.trafficItems[4].value : '--'));
-    r.add(_DI('当月上传', model.vendor == CpeVendor.fiberhome && model.trafficItems.length > 5 ? model.trafficItems[5].value : '--'));
-    r.add(_DI('累计连接', model.trafficItems.length > 2 ? model.trafficItems[2].value : '--'));
-    r.add(_DI('本次连接', '--'));
-    return r;
+  String get _deviceModel => model.subtitle.split('/').first.trim();
+  String get _swVersion => model.identityItems.length > 3 ? model.identityItems[3].value : '--';
+  String get _temperature {
+    for (final item in model.identityItems) {
+      if (item.label.toLowerCase().contains('temp') || item.label.contains('温')) return formatTemperature(item.value);
+    }
+    for (final item in model.trafficItems) {
+      if (item.label.toLowerCase().contains('temp') || item.label.contains('温')) return formatTemperature(item.value);
+    }
+    return '--';
   }
 
   @override
-  Widget build(BuildContext context) => Column(children: [
-    for (int i = 0; i < _rows.length; i += 2)
-      Padding(
-        padding: EdgeInsets.only(bottom: i < _rows.length - 2 ? 4 : 0),
-        child: Row(children: [
-          Expanded(child: _DITile(l: _rows[i].k, v: _rows[i].v)),
-          const SizedBox(width: 10),
-          Expanded(child: _DITile(l: i + 1 < _rows.length ? _rows[i + 1].k : '', v: i + 1 < _rows.length ? _rows[i + 1].v : '')),
-        ]),
-      ),
-  ]);
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      // Row 1: 3 columns
+      Row(children: [
+        Expanded(child: _DITile(l: '设备型号', v: _deviceModel)),
+        const SizedBox(width: 8),
+        Expanded(child: _DITile(l: '软件版本', v: _swVersion)),
+        const SizedBox(width: 8),
+        Expanded(child: _DITile(l: '当前温度', v: _temperature)),
+      ]),
+      const SizedBox(height: 8),
+      // Row 2
+      Row(children: [
+        Expanded(child: _DITile(l: '下载速率', v: model.downloadRate)),
+        const SizedBox(width: 8),
+        Expanded(child: _DITile(l: '上传速率', v: model.uploadRate)),
+      ]),
+      const SizedBox(height: 8),
+      // Row 3: 当日下载/上传 (index 2,3) — trafficItems value 已格式化过，直接使用
+      Row(children: [
+        Expanded(child: _DITile(l: '当日下载', v: model.trafficItems.length > 2 ? model.trafficItems[2].value : '--')),
+        const SizedBox(width: 8),
+        Expanded(child: _DITile(l: '当日上传', v: model.trafficItems.length > 3 ? model.trafficItems[3].value : '--')),
+      ]),
+      const SizedBox(height: 8),
+      // Row 4: 当月下载/上传 (index 4,5) — 同上
+      Row(children: [
+        Expanded(child: _DITile(l: '当月下载', v: model.trafficItems.length > 4 ? model.trafficItems[4].value : '--')),
+        const SizedBox(width: 8),
+        Expanded(child: _DITile(l: '当月上传', v: model.trafficItems.length > 5 ? model.trafficItems[5].value : '--')),
+      ]),
+    ],
+  );
 }
 
 class _DI { const _DI(this.k, this.v); final String k, v; }
@@ -1321,8 +1582,8 @@ class _DITile extends StatelessWidget {
   @override
   Widget build(BuildContext context) => l.isEmpty ? const SizedBox.shrink()
       : Row(children: [
-        Text(l, style: const TextStyle(color: CpeColors.muted, fontSize: 11.5, fontWeight: FontWeight.w600)),
-        const Spacer(), Text(v, style: const TextStyle(color: CpeColors.ink, fontSize: 11.5, fontWeight: FontWeight.w800)),
+        Text(l, style: TextStyle(color: CpeColors.muted, fontSize: 11.5, fontWeight: FontWeight.w600)),
+        const Spacer(), Text(v, style: TextStyle(color: CpeColors.ink, fontSize: 11.5, fontWeight: FontWeight.w800)),
       ]);
 }
 
@@ -1766,22 +2027,19 @@ class DenseKvGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final columns = constraints.maxWidth > 560 ? 3 : 2;
-        return GridView.builder(
-          itemCount: items.length,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-            mainAxisExtent: compact ? 86 : 98,
-          ),
-          itemBuilder: (context, index) => KvTile(item: items[index]),
-        );
-      },
+    final screenWidth = MediaQuery.of(context).size.width;
+    final columns = screenWidth > 560 ? 3 : 2;
+    return GridView.builder(
+      itemCount: items.length,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: columns,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        mainAxisExtent: compact ? 86 : 98,
+      ),
+      itemBuilder: (context, index) => KvTile(item: items[index]),
     );
   }
 }
@@ -1808,7 +2066,7 @@ class KvTile extends StatelessWidget {
             item.label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               color: CpeColors.muted,
               fontWeight: FontWeight.w600,
               fontSize: 11,
@@ -1819,7 +2077,7 @@ class KvTile extends StatelessWidget {
             item.value,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               color: CpeColors.ink,
               fontWeight: FontWeight.w900,
               fontSize: 16,
@@ -1850,7 +2108,7 @@ class MetricBar extends StatelessWidget {
             width: 52,
             child: Text(
               item.label,
-              style: const TextStyle(
+              style: TextStyle(
                 color: CpeColors.muted,
                 fontWeight: FontWeight.w700,
                 fontSize: 13,
@@ -1877,7 +2135,7 @@ class MetricBar extends StatelessWidget {
               textAlign: TextAlign.right,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 color: CpeColors.ink,
                 fontWeight: FontWeight.w900,
                 fontSize: 14,
@@ -1913,7 +2171,7 @@ class PowerRow extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 color: CpeColors.ink,
                 fontWeight: FontWeight.w700,
               ),
@@ -1921,7 +2179,7 @@ class PowerRow extends StatelessWidget {
           ),
           Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               color: CpeColors.ink,
               fontWeight: FontWeight.w900,
             ),
@@ -1955,7 +2213,7 @@ class MiniPanel extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               color: CpeColors.ink,
               fontWeight: FontWeight.w900,
               fontSize: 18,
@@ -1970,7 +2228,7 @@ class MiniPanel extends StatelessWidget {
                   Expanded(
                     child: Text(
                       item.label,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: CpeColors.muted,
                         fontWeight: FontWeight.w700,
                       ),
@@ -1978,7 +2236,7 @@ class MiniPanel extends StatelessWidget {
                   ),
                   Text(
                     item.value,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: CpeColors.ink,
                       fontWeight: FontWeight.w900,
                     ),
@@ -2015,7 +2273,7 @@ class SpeedTile extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 color: CpeColors.muted,
                 fontWeight: FontWeight.w700,
               ),
@@ -2023,7 +2281,7 @@ class SpeedTile extends StatelessWidget {
           ),
           Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               color: CpeColors.ink,
               fontWeight: FontWeight.w900,
               fontSize: 17,
@@ -2052,7 +2310,7 @@ class RawPanel extends StatelessWidget {
             constraints: const BoxConstraints(minHeight: 120),
             child: SelectableText(
               rawOutput.isEmpty ? '暂无数据。' : rawOutput,
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: 'monospace',
                 fontSize: 12.5,
                 height: 1.35,
@@ -2084,7 +2342,7 @@ class FieldBlock extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             color: CpeColors.ink,
             fontWeight: FontWeight.w800,
           ),
@@ -2094,7 +2352,7 @@ class FieldBlock extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           helper,
-          style: const TextStyle(color: CpeColors.muted, fontSize: 12),
+          style: TextStyle(color: CpeColors.muted, fontSize: 12),
         ),
       ],
     );
@@ -2180,7 +2438,7 @@ class InfoStrip extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               color: CpeColors.noticeText,
               fontWeight: FontWeight.w900,
             ),
@@ -2188,7 +2446,7 @@ class InfoStrip extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             body,
-            style: const TextStyle(color: CpeColors.noticeText),
+            style: TextStyle(color: CpeColors.noticeText),
           ),
         ],
       ),
@@ -2210,7 +2468,7 @@ class EmptyOrText extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       text.trim().isEmpty ? empty : text,
-      style: const TextStyle(
+      style: TextStyle(
         color: CpeColors.muted,
         fontWeight: FontWeight.w600,
         height: 1.4,
@@ -2243,6 +2501,76 @@ class TableCellText extends StatelessWidget {
   }
 }
 
+/// RSRP cell with color-coded signal strength indicator (like 射频质量).
+class _RsrpCell extends StatelessWidget {
+  const _RsrpCell(this.raw);
+
+  final String? raw;
+
+  static Color _color(String raw) {
+    final n = numeric(raw);
+    if (n == null) return CpeColors.muted;
+    if (n > -85) return CpeColors.good;
+    if (n > -100) return CpeColors.warn;
+    return CpeColors.danger;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = raw ?? '--';
+    final tint = _color(text);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 8),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: tint,
+          fontWeight: FontWeight.w800,
+          fontSize: 13,
+        ),
+      ),
+    );
+  }
+}
+
+/// SINR cell with color-coded signal quality indicator.
+class _SinrCell extends StatelessWidget {
+  const _SinrCell(this.raw);
+
+  final String? raw;
+
+  static Color _color(String raw) {
+    final n = numeric(raw);
+    if (n == null) return CpeColors.muted;
+    if (n > 12) return CpeColors.good;
+    if (n > 6) return CpeColors.warn;
+    return CpeColors.danger;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = raw ?? '--';
+    final tint = _color(text);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 8),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: tint,
+          fontWeight: FontWeight.w800,
+          fontSize: 13,
+        ),
+      ),
+    );
+  }
+}
+
 class ErrorPanel extends StatelessWidget {
   const ErrorPanel({required this.message, super.key});
 
@@ -2260,7 +2588,7 @@ class ErrorPanel extends StatelessWidget {
       ),
       child: Text(
         message,
-        style: const TextStyle(color: CpeColors.errorText),
+        style: TextStyle(color: CpeColors.errorText),
       ),
     );
   }
@@ -2285,7 +2613,7 @@ class Surface extends StatelessWidget {
         color: tinted ? CpeColors.panel : CpeColors.surface,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: CpeColors.border),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
             blurRadius: 24,
             offset: Offset(0, 12),
@@ -2306,7 +2634,7 @@ class SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       title,
-      style: const TextStyle(
+      style: TextStyle(
         color: CpeColors.ink,
         fontWeight: FontWeight.w700,
         fontSize: 14,
@@ -2463,19 +2791,24 @@ class DashboardModel {
             firstValue(signal, ['QCI', 'qci'])),
       ],
       downlinkItems: [
-        KvItem(metricLabel(displayMode, 'MCS', 'nrdlmcs'),
-            parseMcs(firstValue(signal, ['nrdlmcs']))),
         KvItem(metricLabel(displayMode, '调制', 'DL_Modulation'),
             parseModulation(firstValue(signal, ['nrdlmcs']))),
+        KvItem(metricLabel(displayMode, 'MCS', 'nrdlmcs'),
+            parseMcs(firstValue(signal, ['nrdlmcs']))),
         KvItem(metricLabel(displayMode, 'RANK', 'nrrank'),
             firstValue(signal, ['nrrank'])),
+        KvItem(metricLabel(displayMode, 'RB', 'nrdlrb'),
+            firstValue(signal, ['nrdlrb', 'dl_rb'], fallback: '--')),
       ],
       uplinkItems: [
-        KvItem(metricLabel(displayMode, 'MCS', 'nrulmcs'),
-            parseMcs(firstValue(signal, ['nrulmcs']))),
         KvItem(metricLabel(displayMode, '调制', 'UL_Modulation'),
             parseModulation(firstValue(signal, ['nrulmcs']))),
-        KvItem(metricLabel(displayMode, 'MIMO', 'UL_MIMO'), '--'),
+        KvItem(metricLabel(displayMode, 'MCS', 'nrulmcs'),
+            parseMcs(firstValue(signal, ['nrulmcs']))),
+        KvItem(metricLabel(displayMode, 'RANK', 'UL_RANK'),
+            firstValue(signal, ['nrrank', 'ul_rank'], fallback: '--')),
+        KvItem(metricLabel(displayMode, 'RB', 'nrulrb'),
+            firstValue(signal, ['nrulrb', 'ul_rb'], fallback: '--')),
       ],
       trafficItems: [
         KvItem(metricLabel(displayMode, '当前下载', 'CurrentDownload'),
@@ -2511,7 +2844,8 @@ class DashboardModel {
     Map<String, List<Map<String, String>>>? neighbors,
     DisplayMode displayMode,
   ) {
-    final base = mapAt(snapshot, 'baseInfo');
+    // 处理可能的 {"ret":0, "data":{...}} 嵌套格式
+    final base = _fiberhomeBaseInfoMap(snapshot?['baseInfo']);
     final network = mapAt(snapshot, 'networkInfo');
     final lockBand = mapAt(snapshot, 'lockBand');
     final cellList = mapAt(snapshot, 'cellList');
@@ -2523,7 +2857,10 @@ class DashboardModel {
     final tac = firstValue(base, ['TAC']);
     final ncgi = firstValue(base, ['NCGI']);
     final ecgi = firstValue(base, ['ECGI']);
-    final gnbCell = deriveNrGnbCell(gci: ncgi);
+    // 从格式化 NCGI/ECGI 中提取纯 hex (如 "CELL ID:82c509108 PLMN:46001" → "82c509108")
+    final ncgiHex = extractCellHexFromNcgi(ncgi);
+    final ecgiHex = extractCellHexFromNcgi(ecgi);
+    final gnbCell = deriveNrGnbCell(gci: ncgiHex.isEmpty ? ncgi : ncgiHex);
     final primaryPci = firstCsvValue(firstValue(base, ['PCI_NBR']));
     final primaryArfcn = firstCsvValue(firstValue(base, ['EARFCN_NBR']));
     final primaryBand =
@@ -2551,14 +2888,14 @@ class DashboardModel {
         KvItem(metricLabel(displayMode, 'TAC 十进制', 'TAC'),
             decimalText(parseTacDecimal(tac))),
         KvItem(metricLabel(displayMode, 'GCI 十进制', 'NCGI'),
-            decimalText(parseFlexibleInt(ncgi))),
+            decimalText(parseFlexibleInt(ncgiHex.isEmpty ? ncgi : ncgiHex))),
       ],
       identityItems: [
         KvItem(metricLabel(displayMode, 'gNB - Cell', 'gNB_Cell'), gnbCell),
-        KvItem(metricLabel(displayMode, 'NCGI', 'NCGI'),
-            decimalText(parseFlexibleInt(ncgi))),
+        // NCGI 直接显示原始字符串（如 "CELL ID:82c509108 PLMN:46001"），比解析后的十进制数字更有意义
+        KvItem(metricLabel(displayMode, 'NCGI', 'NCGI'), ncgi.isEmpty ? '--' : ncgi),
         KvItem(metricLabel(displayMode, 'ECGI', 'ECGI'),
-            ecgi == '--' ? decimalText(parseFlexibleInt(ecgi)) : ecgi),
+            ecgi.isEmpty ? '--' : ecgiHex.isEmpty ? ecgi : ecgiHex),
         KvItem(metricLabel(displayMode, '软件版本', 'Software_version'),
             firstValue(base, ['Software_version'])),
         KvItem(metricLabel(displayMode, '温度', 'Temperature'),
@@ -2594,10 +2931,14 @@ class DashboardModel {
         ),
       ],
       powerItems: [
-        KvItem(metricLabel(displayMode, 'PUSCH 发射功率', 'PUSCH_TX_Power'),
+        KvItem(metricLabel(displayMode, 'PUSCH', 'PUSCH_TX_Power'),
             dbmText(base['PUSCH_TX_Power'])),
-        KvItem(metricLabel(displayMode, 'PUCCH 发射功率', 'PUCCH_TX_Power'),
+        KvItem(metricLabel(displayMode, 'PUCCH', 'PUCCH_TX_Power'),
             dbmText(base['PUCCH_TX_Power'])),
+        KvItem(metricLabel(displayMode, 'SRS', 'SRS_TX_Power'),
+            dbmText(base['SRS_TX_Power'])),
+        KvItem(metricLabel(displayMode, 'PRACH', 'PRACH_TX_Power'),
+            dbmText(base['PRACH_TX_Power'])),
       ],
       simItems: [
         KvItem(metricLabel(displayMode, '上行签约带宽', 'UL_AMBR'),
@@ -2608,19 +2949,23 @@ class DashboardModel {
             metricLabel(displayMode, '承载等级', 'QCI'), firstValue(base, ['QCI'])),
       ],
       downlinkItems: [
+        KvItem(metricLabel(displayMode, '调制', 'DL_Modulation'),
+            fiberhomeModulation(base, rawKeys: const ['DL_Modulation', 'DlModulation'], mcsKey: 'DlMCS', displayMode: displayMode)),
         KvItem(metricLabel(displayMode, 'MCS', 'DlMCS'),
             firstValue(base, ['DlMCS'])),
-        KvItem(metricLabel(displayMode, 'MIMO 层数', 'DlMimo'),
+        KvItem(metricLabel(displayMode, 'RANK', 'DlMimo'),
             firstValue(base, ['DlMimo'])),
-        KvItem(metricLabel(displayMode, '带宽', 'DlBandWidth'),
+        KvItem(metricLabel(displayMode, 'RB', 'DlBandWidth'),
             firstValue(base, ['DlBandWidth'])),
       ],
       uplinkItems: [
+        KvItem(metricLabel(displayMode, '调制', 'UL_Modulation'),
+            fiberhomeModulation(base, rawKeys: const ['UL_Modulation', 'UlModulation'], mcsKey: 'UlMCS', displayMode: displayMode)),
         KvItem(metricLabel(displayMode, 'MCS', 'UlMCS'),
             firstValue(base, ['UlMCS'])),
-        KvItem(metricLabel(displayMode, 'MIMO 层数', 'UlMimo'),
+        KvItem(metricLabel(displayMode, 'RANK', 'UlMimo'),
             firstValue(base, ['UlMimo'])),
-        KvItem(metricLabel(displayMode, '带宽', 'UlBandWidth'),
+        KvItem(metricLabel(displayMode, 'RB', 'UlBandWidth'),
             firstValue(base, ['UlBandWidth'])),
       ],
       trafficItems: [
@@ -2682,7 +3027,10 @@ class BarItem {
       label: 'RSRP',
       value: value,
       progress: normalize(number, -120, -70),
-      color: number != null && number > -95 ? CpeColors.good : CpeColors.warn,
+      color: number == null ? CpeColors.warn
+          : number > -85 ? CpeColors.good   // excellent
+          : number > -100 ? CpeColors.warn   // medium
+          : const Color(0xffe74c3c),          // weak — red
     );
   }
 
@@ -2692,7 +3040,10 @@ class BarItem {
       label: 'RSRQ',
       value: value,
       progress: normalize(number, -20, -6),
-      color: number != null && number > -12 ? CpeColors.good : CpeColors.warn,
+      color: number == null ? CpeColors.warn
+          : number > -10 ? CpeColors.good
+          : number > -15 ? CpeColors.warn
+          : const Color(0xffe74c3c),
     );
   }
 
@@ -2702,7 +3053,10 @@ class BarItem {
       label: 'SINR',
       value: value,
       progress: normalize(number, 0, 30),
-      color: number != null && number > 12 ? CpeColors.good : CpeColors.warn,
+      color: number == null ? CpeColors.warn
+          : number > 12 ? CpeColors.good
+          : number > 6 ? CpeColors.warn
+          : const Color(0xffe74c3c),
     );
   }
 
@@ -2712,17 +3066,23 @@ class BarItem {
       label: 'RSSI',
       value: value,
       progress: normalize(number, -100, -45),
-      color: CpeColors.good,
+      color: number == null ? CpeColors.warn
+          : number > -65 ? CpeColors.good
+          : number > -80 ? CpeColors.warn
+          : const Color(0xffe74c3c),
     );
   }
 
   factory BarItem.cqi(String value) {
     final number = numeric(value);
     return BarItem(
-      label: 'CQI0',
+      label: 'CQI',
       value: value,
       progress: normalize(number, 0, 15),
-      color: CpeColors.good,
+      color: number == null ? CpeColors.warn
+          : number >= 10 ? CpeColors.good
+          : number >= 7 ? CpeColors.warn
+          : const Color(0xffe74c3c),
     );
   }
 
@@ -2742,35 +3102,53 @@ class BarItem {
 }
 
 class CpeColors {
-  // CPE++ dark theme from screenshot
-  static const background = Color(0xff0a0d12);      // deep navy bg
-  static const surface = Color(0xff111620);         // card surface
-  static const panel = Color(0xff111620);           // same as surface
-  static const input = Color(0xff1a2030);           // input fields
-  static const tile = Color(0xff161d2a);            // metric tile bg
-  static const tileAccent = Color(0xff1e2838);      // highlighted tile
-  static const border = Color(0xff252d3a);          // subtle borders
-  static const primary = Color(0xff4493f5);         // blue accent
-  static const ink = Color(0xffe0e6ed);             // main text
-  static const muted = Color(0xff7a869a);           // secondary text
-  static const good = Color(0xff30a14e);            // green (good signal)
-  static const warn = Color(0xffd4a017);            // yellow/orange
-  static const danger = Color(0xffe74c3c);          // red (bad/high power)
-  static const orange = Color(0xffe67e22);          // medium power
-  static const notice = Color(0xff2d1b00);
-  static const noticeBorder = Color(0xff5a3e00);
-  static const noticeText = Color(0xffe3b341);
-  static const error = Color(0xff3d1117);
-  static const errorBorder = Color(0xff6e2229);
-  static const errorText = Color(0xffff7b72);
-  static const shadow = Color(0x33000000);
-  // CPE++ accent
-  static const accent = Color(0xff4493f5);
-  static const accentLight = Color(0xff66a8ff);
-  static const cardBg = Color(0xff111620);
-  // Badge colors
-  static const badgeRrc = Color(0xffc17702);        // brown/orange for RRC
-  static const badgeMode = Color(0xff4493f5);       // blue for mode
+  static bool _isDark = true;
+  static bool get isDark => _isDark;
+  static set isDark(bool v) { if (_isDark != v) _isDark = v; }
+
+  static Color get background => _isDark ? const Color(0xff0a0d12) : const Color(0xffF5F7FA);
+  static Color get surface    => _isDark ? const Color(0xff111620) : const Color(0xffFFFFFF);
+  static Color get panel      => _isDark ? const Color(0xff111620) : const Color(0xffFFFFFF);
+  static Color get input      => _isDark ? const Color(0xff1a2030) : const Color(0xffE8ECF1);
+  static Color get tile       => _isDark ? const Color(0xff161d2a) : const Color(0xffEDF0F5);
+  static Color get tileAccent => _isDark ? const Color(0xff1e2838) : const Color(0xffD6E4F0);
+  static Color get border     => _isDark ? const Color(0xff252d3a) : const Color(0xffD1D5DB);
+  static Color get primary    => const Color(0xff4493f5);
+  static Color get ink        => _isDark ? const Color(0xffe0e6ed) : const Color(0xff1A1D24);
+  static Color get muted      => _isDark ? const Color(0xff7a869a) : const Color(0xff6B7280);
+  static Color get good       => _isDark ? const Color(0xff30a14e) : const Color(0xff16A34A);
+  static Color get warn       => _isDark ? const Color(0xffd4a017) : const Color(0xffCA8A04);
+  static Color get danger     => _isDark ? const Color(0xffe74c3c) : const Color(0xffDC2626);
+  static Color get orange     => _isDark ? const Color(0xffe67e22) : const Color(0xffEA580C);
+  static Color get notice     => _isDark ? const Color(0xff2d1b00) : const Color(0xffFEF3C7);
+  static Color get noticeBorder => _isDark ? const Color(0xff5a3e00) : const Color(0xffF59E0B);
+  static Color get noticeText => _isDark ? const Color(0xffe3b341) : const Color(0xff92400E);
+  static Color get error      => _isDark ? const Color(0xff3d1117) : const Color(0xffFEE2E2);
+  static Color get errorBorder=> _isDark ? const Color(0xff6e2229) : const Color(0xffEF4444);
+  static Color get errorText  => _isDark ? const Color(0xffff7b72) : const Color(0xffDC2626);
+  static Color get shadow     => _isDark ? const Color(0x33000000) : const Color(0x1A000000);
+  static Color get accent     => const Color(0xff4493f5);
+  static Color get accentLight=> const Color(0xff66a8ff);
+  static Color get cardBg     => _isDark ? const Color(0xff111620) : const Color(0xffFFFFFF);
+  static Color get badgeRrc   => _isDark ? const Color(0xffc17702) : const Color(0xffB45309);
+  static Color get badgeMode  => const Color(0xff4493f5);
+}
+
+/// 处理烽火 API 响应中可能存在的 {"ret":0, "data":{...}} 嵌套格式
+/// 如果检测到 data 键包含有效的 Map，则返回展开的 data 内容
+Map<String, String> _fiberhomeBaseInfoMap(Map<String, dynamic>? rawBaseInfo) {
+  if (rawBaseInfo == null) return <String, String>{};
+  final maybeData = rawBaseInfo['data'];
+  // 如果 data 是一个非空 Map，使用 data 内部的内容
+  if (maybeData is Map && maybeData.isNotEmpty) {
+    return maybeData.map(
+      (k, v) => MapEntry(k.toString(), v.toString()),
+    );
+  }
+  // 否则直接使用顶层字段
+  return rawBaseInfo.map(
+    (k, v) => MapEntry(k.toString(), v.toString()),
+  );
 }
 
 Map<String, String> mapAt(Map<String, dynamic>? value, String key) {
@@ -2787,10 +3165,8 @@ Map<String, String> mapAt(Map<String, dynamic>? value, String key) {
 Map<String, List<Map<String, String>>> fiberhomeNeighbors(
   Map<String, dynamic> snapshot,
 ) {
-  final baseInfo = snapshot['baseInfo'];
-  if (baseInfo is Map) {
-    final base = baseInfo
-        .map((key, value) => MapEntry(key.toString(), value.toString()));
+  final base = _fiberhomeBaseInfoMap(snapshot['baseInfo']);
+  if (base.isNotEmpty) {
     final bands = splitCsv(base['BAND_NBR']);
     final arfcns = splitCsv(base['EARFCN_NBR']);
     final pcis = splitCsv(base['PCI_NBR']);
