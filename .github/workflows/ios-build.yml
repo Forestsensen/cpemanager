@@ -13,7 +13,7 @@ env:
 jobs:
   build-ios:
     name: Build iOS IPA (for TrollStore)
-    runs-on: macos-13
+    runs-on: macos-latest
 
     steps:
       - name: Checkout code
@@ -35,11 +35,7 @@ jobs:
 
       - name: Build iOS (no codesign)
         working-directory: ${{ env.PROJECT_DIR }}
-        run: flutter build ios --release --no-codesign --no-tree-shake-icons
-        env:
-          CODE_SIGN_IDENTITY: ""
-          CODE_SIGNING_REQUIRED: "NO"
-          CODE_SIGNING_ALLOWED: "NO"
+        run: flutter build ios --release --no-codesign --no-tree-shake-icons 
 
       - name: Package IPA (for TrollStore)
         working-directory: ${{ env.PROJECT_DIR }}
