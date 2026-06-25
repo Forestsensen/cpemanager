@@ -13,7 +13,7 @@ env:
 jobs:
   build-ios:
     name: Build iOS IPA (for TrollStore)
-    runs-on: macos-latest
+    runs-on: macos-13
 
     steps:
       - name: Checkout code
