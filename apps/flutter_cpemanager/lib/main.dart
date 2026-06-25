@@ -1959,7 +1959,7 @@ class CellTable extends StatelessWidget {
           5: FlexColumnWidth(1.0),
         },
         children: [
-          const TableRow(
+          TableRow(
             decoration: BoxDecoration(color: CpeColors.tileAccent),
             children: [
               TableCellText('BAND', head: true),
