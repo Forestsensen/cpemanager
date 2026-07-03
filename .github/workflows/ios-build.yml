@@ -27,11 +27,17 @@ jobs:
 
       - name: Flutter pub get
         working-directory: ${{ env.PROJECT_DIR }}
-        run: flutter clean && flutter pub get
+        run: flutter pub get
 
       - name: Install CocoaPods dependencies
         working-directory: ${{ env.PROJECT_DIR }}/ios
         run: pod install --repo-update
+
+      - name: Disable code signing in Xcode project
+        working-directory: ${{ env.PROJECT_DIR }}/ios
+        run: |
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;\n\t\t\t\tCODE_SIGNING_ALLOWED = NO;/g' Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGN_IDENTITY = "iPhone Developer";/CODE_SIGN_IDENTITY = "-";/g' Runner.xcodeproj/project.pbxproj
 
       - name: Build iOS (no codesign)
         working-directory: ${{ env.PROJECT_DIR }}
