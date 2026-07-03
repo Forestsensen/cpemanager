@@ -27,7 +27,7 @@ jobs:
 
       - name: Flutter pub get
         working-directory: ${{ env.PROJECT_DIR }}
-        run: flutter pub get
+        run: flutter clean && flutter pub get
 
       - name: Install CocoaPods dependencies
         working-directory: ${{ env.PROJECT_DIR }}/ios
