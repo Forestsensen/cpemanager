@@ -216,7 +216,15 @@ class FiberhomeClient {
     final response = await request.close().timeout(timeout);
     final text = await response.transform(utf8.decoder).join();
     _raiseForStatus(response, text);
-    final decrypted = _FiberhomeAes.decrypt(text, _sessionId.trim());
+
+    // AES 解密响应
+    String decrypted;
+    try {
+      decrypted = _FiberhomeAes.decrypt(text, _sessionId.trim());
+    } catch (_) {
+      // 如果解密失败，可能服务端返回了明文
+      decrypted = text;
+    }
     final decoded = _decodeJson(decrypted);
     final nextSession = decoded['sessionid']?.toString() ?? '';
     if (nextSession.isNotEmpty) {
@@ -312,9 +320,17 @@ class FiberhomeClient {
     final text = await response.transform(utf8.decoder).join();
     _raiseForStatus(response, text);
 
-    // AES 解密响应
-    final decrypted = _FiberhomeAes.decrypt(text, _sessionId.trim());
-    return _decodeJson(decrypted);
+    // AES 解密响应（失败则返回原始文本用于调试）
+    try {
+      final decrypted = _FiberhomeAes.decrypt(text, _sessionId.trim());
+      return _decodeJson(decrypted);
+    } catch (e) {
+      // 解密失败通常是因为服务端返回了明文错误
+      if (text.length < 500 && !text.startsWith('{')) {
+        throw StateError('FHAPIS error: $text');
+      }
+      return _decodeJson(text);
+    }
   }
 
   // ─── AT 命令接口 ──────────────────────────────────────────────
