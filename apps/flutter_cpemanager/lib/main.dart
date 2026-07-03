@@ -522,7 +522,11 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     return runTask('发送 AT 命令', () async {
       try {
-        final client = fiberhomeClient();
+        final client = FiberhomeClient(
+          host: normalizedHost,
+          username: 'superadmin',
+          password: r'F1ber$dm',
+        );
         final result = await client.sendAtCommand(cmd);
         setState(() {
           atOutput = const JsonEncoder.withIndent('  ').convert(result);

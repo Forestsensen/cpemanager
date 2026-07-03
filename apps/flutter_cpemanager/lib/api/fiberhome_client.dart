@@ -189,6 +189,42 @@ class FiberhomeClient {
     }
   }
 
+  // ─── Web 登录（superadmin，FHAPIS 用） ──────────────────────
+
+  /// 通过 Web 登录接口获取 superadmin 会话。
+  /// 返回加密后的 sessionid，后续 FHAPIS 调用使用此 sessionid。
+  Future<String> superLogin() async {
+    _sessionId = await refreshSessionId();
+    final innerJson = jsonEncode(<String, Object?>{
+      'dataObj': <String, String>{
+        'username': username.trim().isEmpty ? 'superadmin' : username.trim(),
+        'password': password,
+      },
+      'ajaxmethod': 'DO_WEB_LOGIN',
+      'sessionid': _sessionId.trim(),
+    });
+
+    final encryptedBody = _FiberhomeAes.encrypt(innerJson, _sessionId.trim());
+    final uri = Uri.parse('http://$_normalizedHost/api/sign/DO_WEB_LOGIN');
+    final request = await _http.postUrl(uri).timeout(timeout);
+    request.headers.set(HttpHeaders.contentTypeHeader, 'text/plain');
+    _applyHeaders(request);
+    final payload = utf8.encode(encryptedBody);
+    request.contentLength = payload.length;
+    request.add(payload);
+
+    final response = await request.close().timeout(timeout);
+    final text = await response.transform(utf8.decoder).join();
+    _raiseForStatus(response, text);
+    final decrypted = _FiberhomeAes.decrypt(text, _sessionId.trim());
+    final decoded = _decodeJson(decrypted);
+    final nextSession = decoded['sessionid']?.toString() ?? '';
+    if (nextSession.isNotEmpty) {
+      _sessionId = nextSession;
+    }
+    return _sessionId;
+  }
+
   // ─── FHTOOLAPIS 明文接口 ──────────────────────────────────────
 
   Future<Map<String, dynamic>> call(
@@ -248,7 +284,10 @@ class FiberhomeClient {
     String ajaxMethod, {
     Object? dataObj,
   }) async {
-    await _ensureLoggedIn();
+    // FHAPIS 需要 superadmin web 登录
+    if (_sessionId.trim().isEmpty || username == 'superadmin') {
+      await superLogin();
+    }
     _sessionId = await refreshSessionId();
 
     // 构造明文 JSON
