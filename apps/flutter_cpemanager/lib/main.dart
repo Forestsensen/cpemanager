@@ -196,6 +196,8 @@ class _HomeScreenState extends State<HomeScreen> {
   String rawOutput = '';
   String atOutput = '';
   final TextEditingController atController = TextEditingController(text: 'AT+QENG="servingcell"');
+  Map<String, String> atServingCellDetail = {};
+  List<Map<String, String>> caCells = <Map<String, String>>[];
   String? error;
   bool busy = false;
   bool autoRefresh = true;
@@ -294,6 +296,87 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// 用超管密码登录 FHAPIS 并发送 AT 命令。
+  /// 返回 at_result 字段的原始文本。
+  Future<String> _sendSuperAt(String command) async {
+    final client = FiberhomeClient(
+      host: normalizedHost,
+      username: 'superadmin',
+      password: 'F1ber\$dm',
+    );
+    await client.login();
+    final result = await client.sendAtCommand(command);
+    return result['at_result']?.toString() ?? '';
+  }
+
+  /// 解析 AT+QENG="servingcell" 响应。
+  /// 提取: Band/BW/PCI/MIMO/SCS/Antenna 等字段。
+  static Map<String, String> _parseServingCell(String raw) {
+    final result = <String, String>{};
+    // 找到 NR5G- 开头的行
+    for (final line in raw.split('\n')) {
+      if (line.contains('NR5G-')) {
+        final parts = line.split(',').map((s) => s.trim().replaceAll('"', '')).toList();
+        if (parts.length >= 12) {
+          result['mode'] = parts[0];           // NR5G-SA or NR5G-NSA
+          result['duplex'] = parts[1];         // TDD/FDD
+          result['band'] = parts.length > 4 ? parts[4] : '';
+          result['bw'] = parts.length > 5 ? '${parts[5]}MHz' : '';
+          result['tac'] = parts.length > 6 ? parts[6] : '';
+          result['pci'] = parts.length > 7 ? parts[7] : '';
+          result['rsrp'] = parts.length > 8 ? parts[8] : '';
+          result['rsrq'] = parts.length > 9 ? parts[9] : '';
+          result['sinr'] = parts.length > 10 ? parts[10] : '';
+          result['scs'] = parts.length > 11 ? parts[11] : '';
+          result['mimo'] = parts.length > 12 ? parts[12] : '';
+        }
+        break;
+      }
+    }
+    return result;
+  }
+
+  /// 解析 AT+QCAINFO 响应。
+  /// 提取每行 SCC 信息。
+  static List<Map<String, String>> _parseCaInfo(String raw) {
+    final cells = <Map<String, String>>[];
+    for (final line in raw.split('\n')) {
+      if (!line.contains('+QCAINFO:')) continue;
+      final parts = line.split(',').map((s) => s.trim().replaceAll('"', '')).toList();
+      if (parts.length < 4) continue;
+      final cell = <String, String>{
+        'type': parts[0].replaceAll('+QCAINFO:', ''),
+        'earfcn': parts.length > 1 ? parts[1] : '',
+        'band': parts.length > 2 ? parts[2] : '',
+        'bw': parts.length > 3 ? '${parts[3]}MHz' : '',
+        'pci': parts.length > 4 ? parts[4] : '',
+        'rsrp': parts.length > 7 ? parts[7] : '',
+        'rsrq': parts.length > 8 ? parts[8] : '',
+        'sinr': parts.length > 9 ? parts[9] : '',
+      };
+      cells.add(cell);
+    }
+    return cells;
+  }
+
+  /// 自动采集 AT 命令数据（烽火设备）。
+  /// 仅用于自动刷新，失败静默跳过，不影响主流程。
+  Future<void> _fetchFiberhomeAtData() async {
+    try {
+      final results = await Future.wait([
+        _sendSuperAt('AT+QENG="servingcell"'),
+        _sendSuperAt('AT+QCAINFO'),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        atServingCellDetail = _parseServingCell(results[0]);
+        caCells = _parseCaInfo(results[1]);
+      });
+    } catch (_) {
+      // 静默失败，不影响现有功能
+    }
+  }
+
   String get normalizedHost {
     return hostController.text.trim().isEmpty
         ? '192.168.8.1'
@@ -376,6 +459,8 @@ class _HomeScreenState extends State<HomeScreen> {
             rawOutput = '$keysDiag\n$json';
             lastUpdated = DateTime.now();
           });
+          // 自动采集 AT 命令数据（不影响主流程）
+          unawaited(_fetchFiberhomeAtData());
         }
       }, silent: silent);
     } finally {
@@ -625,8 +710,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   IndexedStack(
                     index: tabIndex,
                     children: [
-                      PccWorkspace(model: model),
-                      CarrierWorkspace(model: model),
+                      PccWorkspace(model: model, atDetail: atServingCellDetail),
+                      CarrierWorkspace(model: model, caCells: caCells),
                       LockWorkspace(
                         vendor: vendor,
                         model: model,
@@ -1147,9 +1232,10 @@ class DeviceProfileCard extends StatelessWidget {
 }
 
 class PccWorkspace extends StatelessWidget {
-  const PccWorkspace({required this.model, super.key});
+  const PccWorkspace({required this.model, this.atDetail = const {}, super.key});
 
   final DashboardModel model;
+  final Map<String, String> atDetail;
 
   @override
   Widget build(BuildContext context) {
@@ -1183,6 +1269,23 @@ class PccWorkspace extends StatelessWidget {
               },
             ),
           ),
+          // ── AT 命令细节（仅烽火，有数据时显示） ──
+          if (atDetail.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                children: [
+                  _AtDetailChip(label: 'MIMO', value: atDetail['mimo']),
+                  const SizedBox(width: 6),
+                  _AtDetailChip(label: 'BW', value: atDetail['bw']),
+                  const SizedBox(width: 6),
+                  _AtDetailChip(label: 'SCS', value: atDetail['scs']),
+                  const SizedBox(width: 6),
+                  _AtDetailChip(label: '双工', value: atDetail['duplex']),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
           // ── 5. 射频质量 (RF Quality) - 3+2 layout with bars ──
           _SectionCard(
@@ -1211,6 +1314,30 @@ class PccWorkspace extends StatelessWidget {
 // ════════════════════════════════════════════════
 // CPE++ Layout Components
 // ════════════════════════════════════════════════
+
+/// MIMO/BW/SCS 细节标签
+class _AtDetailChip extends StatelessWidget {
+  const _AtDetailChip({required this.label, required this.value});
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final v = value.trim();
+    if (v.isEmpty || v == '--') return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: CpeColors.tileAccent,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        '$label $v',
+        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+}
 
 /// Section card container
 class _SectionCard extends StatelessWidget {
@@ -1675,9 +1802,10 @@ class _DITile extends StatelessWidget {
 
 
 class CarrierWorkspace extends StatelessWidget {
-  const CarrierWorkspace({required this.model, super.key});
+  const CarrierWorkspace({required this.model, this.caCells = const [], super.key});
 
   final DashboardModel model;
+  final List<Map<String, String>> caCells;
 
   @override
   Widget build(BuildContext context) {
@@ -1700,10 +1828,54 @@ class CarrierWorkspace extends StatelessWidget {
             children: [
               const SectionTitle(title: '载波聚合'),
               const SizedBox(height: 12),
-              EmptyOrText(
-                text: model.caSummary,
-                empty: '当前没有可展示的辅载波数据。',
-              ),
+              if (caCells.isEmpty)
+                EmptyOrText(
+                  text: model.caSummary,
+                  empty: '当前没有可展示的辅载波数据。',
+                )
+              else
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Table(
+                    columnWidths: const {
+                      0: FlexColumnWidth(1.0),
+                      1: FlexColumnWidth(1.2),
+                      2: FlexColumnWidth(1.0),
+                      3: FlexColumnWidth(1.0),
+                      4: FlexColumnWidth(1.1),
+                      5: FlexColumnWidth(1.1),
+                    },
+                    children: [
+                      const TableRow(
+                        decoration: BoxDecoration(color: CpeColors.tileAccent),
+                        children: [
+                          TableCellText('类型', head: true),
+                          TableCellText('EARFCN', head: true),
+                          TableCellText('BAND', head: true),
+                          TableCellText('PCI', head: true),
+                          TableCellText('RSRP', head: true),
+                          TableCellText('SINR', head: true),
+                        ],
+                      ),
+                      for (var i = 0; i < caCells.length; i++)
+                        TableRow(
+                          decoration: BoxDecoration(
+                            color: i.isEven ? CpeColors.tile : CpeColors.panel,
+                          ),
+                          children: [
+                            TableCellText(caCells[i]['type'] ?? '--'),
+                            TableCellText(caCells[i]['earfcn'] ?? '--'),
+                            TableCellText('N${caCells[i]['band'] ?? '--'}'),
+                            TableCellText(caCells[i]['pci'] ?? '--'),
+                            TableCellText(caCells[i]['rsrp'] ?? '--'),
+                            TableCellText(
+                              caCells[i]['sinr'] ?? '--',
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
             ],
           ),
         ),
