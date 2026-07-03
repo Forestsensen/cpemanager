@@ -194,6 +194,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic>? snapshot;
   Map<String, List<Map<String, String>>>? neighbors;
   String rawOutput = '';
+  String atOutput = '';
+  final TextEditingController atController = TextEditingController(text: 'AT+QENG="servingcell"');
   String? error;
   bool busy = false;
   bool autoRefresh = true;
@@ -508,6 +510,31 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  Future<void> sendAtCommand() async {
+    final cmd = atController.text.trim();
+    if (cmd.isEmpty) {
+      setState(() => atOutput = 'AT command is empty.');
+      return;
+    }
+    if (vendor != CpeVendor.fiberhome) {
+      setState(() => atOutput = 'AT commands only supported for Fiberhome CPE.');
+      return;
+    }
+    return runTask('发送 AT 命令', () async {
+      try {
+        final client = fiberhomeClient();
+        final result = await client.sendAtCommand(cmd);
+        setState(() {
+          atOutput = const JsonEncoder.withIndent('  ').convert(result);
+        });
+      } catch (e) {
+        setState(() {
+          atOutput = 'Error: $e';
+        });
+      }
+    });
+  }
+
   Future<bool> confirm(String message) async {
     return await showDialog<bool>(
           context: context,
@@ -624,6 +651,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         passwordController: passwordController,
                         onRead: busy ? null : () { _saveCredentials(); refreshSnapshot(); },
                         rawOutput: rawOutput,
+                        atController: vendor == CpeVendor.fiberhome ? atController : null,
+                        atOutput: atOutput,
+                        onSendAt: busy ? null : sendAtCommand,
                       ),
                     ],
                   ),
@@ -907,6 +937,9 @@ class LoginWorkspace extends StatelessWidget {
     required this.usernameController,
     required this.passwordController,
     required this.onRead,
+    this.atController,
+    this.atOutput = '',
+    this.onSendAt,
     this.rawOutput = '',
     super.key,
   });
@@ -916,6 +949,9 @@ class LoginWorkspace extends StatelessWidget {
   final TextEditingController usernameController;
   final TextEditingController passwordController;
   final VoidCallback? onRead;
+  final TextEditingController? atController;
+  final String atOutput;
+  final VoidCallback? onSendAt;
   final String rawOutput;
 
   @override
@@ -980,6 +1016,56 @@ class LoginWorkspace extends StatelessWidget {
           body:
               '${profile.title} · ${profile.protocol}。后续新增设备时会继续放进这个档案选择器，不需要改变登录流程。',
         ),
+        // ── AT 命令调试（仅烽火） ──
+        if (vendor == CpeVendor.fiberhome && atController != null) ...[
+          const SizedBox(height: 12),
+          _SectionCard(
+            title: 'AT 命令调试',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: atController,
+                        decoration: const InputDecoration(
+                          hintText: 'AT+QENG="servingcell"',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      onPressed: onSendAt,
+                      icon: const Icon(Icons.send, size: 18),
+                      label: const Text('发送'),
+                    ),
+                  ],
+                ),
+                if (atOutput.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 300),
+                    child: SingleChildScrollView(
+                      child: SelectableText(
+                        atOutput,
+                        style: TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 11,
+                          height: 1.4,
+                          color: CpeColors.muted,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
         // Raw snapshot JSON
         if (rawOutput.isNotEmpty) ...[
           const SizedBox(height: 12),
