@@ -108,6 +108,8 @@ class FiberhomeClient {
   final Duration timeout;
   final HttpClient _http = HttpClient();
   String _sessionId;
+  final Map<String, String> _cookies = <String, String>{};
+  bool _superLoggedIn = false;
 
   String get _normalizedHost {
     return host
@@ -175,6 +177,7 @@ class FiberhomeClient {
     final response = await request.close().timeout(timeout);
     final text = await response.transform(utf8.decoder).join();
     _raiseForStatus(response, text);
+    _storeCookies(response);
     final decoded = _decodeJson(text);
     final nextSession = decoded['sessionid']?.toString() ?? '';
     if (nextSession.isEmpty) {
@@ -192,12 +195,13 @@ class FiberhomeClient {
   // ─── Web 登录（superadmin，FHAPIS 用） ──────────────────────
 
   /// 通过 Web 登录接口获取 superadmin 会话。
-  /// 返回加密后的 sessionid，后续 FHAPIS 调用使用此 sessionid。
+  /// 返回本次会话的 sessionid，后续 FHAPIS 调用必须使用同一个 sessionid 派生 AES key。
   Future<String> superLogin() async {
     _sessionId = await refreshSessionId();
     final innerJson = jsonEncode(<String, Object?>{
       'dataObj': <String, String>{
-        'username': username.trim().isEmpty ? 'superadmin' : username.trim(),
+        // FHAPIS 必须使用 superadmin 账号，忽略外部传入的普通 username
+        'username': 'superadmin',
         'password': password,
       },
       'ajaxmethod': 'DO_WEB_LOGIN',
@@ -216,20 +220,23 @@ class FiberhomeClient {
     final response = await request.close().timeout(timeout);
     final text = await response.transform(utf8.decoder).join();
     _raiseForStatus(response, text);
+    _storeCookies(response);
 
     // AES 解密响应
     String decrypted;
     try {
       decrypted = _FiberhomeAes.decrypt(text, _sessionId.trim());
     } catch (_) {
-      // 如果解密失败，可能服务端返回了明文
+      // 如果解密失败，可能服务端返回了明文（如 0| 错误）
       decrypted = text;
     }
     final decoded = _decodeJson(decrypted);
     final nextSession = decoded['sessionid']?.toString() ?? '';
     if (nextSession.isNotEmpty) {
+      // 登录后服务端可能轮换 sessionid，后续 FHAPIS 必须沿用同一个
       _sessionId = nextSession;
     }
+    _superLoggedIn = true;
     return _sessionId;
   }
 
@@ -292,11 +299,12 @@ class FiberhomeClient {
     String ajaxMethod, {
     Object? dataObj,
   }) async {
-    // FHAPIS 需要 superadmin web 登录
-    if (_sessionId.trim().isEmpty || username == 'superadmin') {
+    // FHAPIS 必须走 superadmin Web 登录，且全程使用同一个 sessionid 派生 AES key。
+    // 注意：这里不能再 refreshSessionId()，否则 sessionid 改变会导致 AES key 不匹配，
+    // 服务端返回明文 0| 错误而非密文 —— 这正是之前“无法解密”的根因。
+    if (_sessionId.trim().isEmpty || !_superLoggedIn) {
       await superLogin();
     }
-    _sessionId = await refreshSessionId();
 
     // 构造明文 JSON
     final innerJson = jsonEncode(<String, Object?>{
@@ -305,7 +313,7 @@ class FiberhomeClient {
       'sessionid': _sessionId.trim(),
     });
 
-    // AES 加密
+    // AES 加密（使用 superLogin 拿到的同一 sessionid 派生 key）
     final encryptedBody = _FiberhomeAes.encrypt(innerJson, _sessionId.trim());
 
     // 发送 POST
@@ -319,17 +327,17 @@ class FiberhomeClient {
     final response = await request.close().timeout(timeout);
     final text = await response.transform(utf8.decoder).join();
     _raiseForStatus(response, text);
+    _storeCookies(response);
 
-    // AES 解密响应（失败则返回原始文本用于调试）
+    // AES 解密响应
     try {
       final decrypted = _FiberhomeAes.decrypt(text, _sessionId.trim());
       return _decodeJson(decrypted);
+    } on FormatException {
+      // 响应不是合法 HEX（如 0| 明文错误），直接抛出便于排查
+      throw StateError('FHAPIS 返回非密文（解密失败）：$text');
     } catch (e) {
-      // 解密失败通常是因为服务端返回了明文错误
-      if (text.length < 500 && !text.startsWith('{')) {
-        throw StateError('FHAPIS error: $text');
-      }
-      return _decodeJson(text);
+      throw StateError('FHAPIS 解密异常：$e | 原始响应：$text');
     }
   }
 
@@ -493,6 +501,26 @@ class FiberhomeClient {
     request.headers.set('User-Agent', 'Mozilla/5.0 CPEManager/0.4.0');
     request.headers.set('X-Requested-With', 'XMLHttpRequest');
     request.headers.set('Accept-Language', 'zh-CN,en,*');
+    if (_cookies.isNotEmpty) {
+      request.headers.set('Cookie', _cookieHeader());
+    }
+  }
+
+  /// 解析并保存服务端下发的 Set-Cookie（模拟浏览器会话保持）。
+  void _storeCookies(HttpClientResponse response) {
+    final setCookies = response.headers['set-cookie'];
+    if (setCookies == null) return;
+    for (final sc in setCookies) {
+      final pair = sc.split(';').first;
+      final idx = pair.indexOf('=');
+      if (idx > 0) {
+        _cookies[pair.substring(0, idx).trim()] = pair.substring(idx + 1).trim();
+      }
+    }
+  }
+
+  String _cookieHeader() {
+    return _cookies.entries.map((e) => '${e.key}=${e.value}').join('; ');
   }
 
   static Map<String, dynamic> _decodeJson(String text) {
