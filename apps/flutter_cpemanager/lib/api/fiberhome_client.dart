@@ -244,7 +244,7 @@ class FiberhomeClient {
         decoded = <String, dynamic>{};
       } else if (status.startsWith('0|')) {
         throw StateError(
-            'FHAPIS Web 登录失败（状态码 $status）。请确认设备为烽火 RP0108 且超密为 F1ber$dm。');
+            'FHAPIS Web 登录失败（状态码 $status）。请确认设备为烽火 RP0108 且超密为 F1ber\$dm。');
       } else {
         throw StateError('FHAPIS Web 登录返回非预期响应：$text');
       }
