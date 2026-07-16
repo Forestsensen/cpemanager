@@ -40,18 +40,30 @@ jobs:
           sed -i '' 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "iPhone Developer";/CODE_SIGN_IDENTITY = "";/g' Runner.xcodeproj/project.pbxproj
           grep -E 'CODE_SIGN_STYLE|CODE_SIGN_IDENTITY' Runner.xcodeproj/project.pbxproj | head -10
 
-      - name: Build iOS (no codesign)
-        working-directory: ${{ env.PROJECT_DIR }}
+      - name: Build iOS with xcodebuild (no codesign)
+        working-directory: ${{ env.PROJECT_DIR }}/ios
         env:
           CODE_SIGNING_ALLOWED: NO
           CODE_SIGNING_REQUIRED: NO
-        run: flutter build ios --release --no-codesign --no-tree-shake-icons
+        run: |
+          xcodebuild -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -destination generic/platform=iOS \
+            -archivePath ../build/ios/Runner.xcarchive \
+            archive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM=""
 
       - name: Package IPA (for TrollStore)
-        working-directory: ${{ env.PROJECT_DIR }}/build/ios/iphoneos
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          mkdir -p Payload
-          cp -r Runner.app Payload/
+          rm -rf build/ios/iphoneos/Payload
+          mkdir -p build/ios/iphoneos/Payload
+          cp -r build/ios/Runner.xcarchive/Products/Applications/Runner.app build/ios/iphoneos/Payload/
+          cd build/ios/iphoneos
           zip -r CPEManager.ipa Payload/
           rm -rf Payload
 
