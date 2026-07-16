@@ -33,8 +33,18 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}/ios
         run: pod install --repo-update
 
+      - name: Disable iOS code signing for CI
+        working-directory: ${{ env.PROJECT_DIR }}/ios
+        run: |
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "iPhone Developer";/CODE_SIGN_IDENTITY = "";/g' Runner.xcodeproj/project.pbxproj
+          grep -E 'CODE_SIGN_STYLE|CODE_SIGN_IDENTITY' Runner.xcodeproj/project.pbxproj | head -10
+
       - name: Build iOS (no codesign)
         working-directory: ${{ env.PROJECT_DIR }}
+        env:
+          CODE_SIGNING_ALLOWED: NO
+          CODE_SIGNING_REQUIRED: NO
         run: flutter build ios --release --no-codesign --no-tree-shake-icons
 
       - name: Package IPA (for TrollStore)
