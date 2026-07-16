@@ -194,6 +194,8 @@ class FiberhomeClient {
 
   // ─── Web 登录（superadmin，FHAPIS 用） ──────────────────────
 
+  static const String _superAdminPassword = r'F1ber$dm';
+
   /// 通过 Web 登录接口获取 superadmin 会话。
   /// 返回本次会话的 sessionid，后续 FHAPIS 调用必须使用同一个 sessionid 派生 AES key。
   Future<String> superLogin() async {
@@ -202,7 +204,8 @@ class FiberhomeClient {
       'dataObj': <String, String>{
         // FHAPIS 必须使用 superadmin 账号，忽略外部传入的普通 username
         'username': 'superadmin',
-        'password': password,
+        // RP0108 固件超管固定密码，不依赖用户输入的 admin 密码
+        'password': _superAdminPassword,
       },
       'ajaxmethod': 'DO_WEB_LOGIN',
       'sessionid': _sessionId.trim(),
@@ -230,17 +233,20 @@ class FiberhomeClient {
       decrypted = text;
     }
 
-    // 响应可能是 JSON {"sessionid":"..."}，也可能是明文状态码如 0|3
+    // 响应应为 AES 加密 JSON；若服务端返回明文状态码则按状态码处理。
+    // 常见明文状态：0|0 成功，0|1 密码错误，0|3 会话/认证异常等。
     Map<String, dynamic> decoded;
     try {
       decoded = _decodeJson(decrypted);
     } on FormatException {
       final status = decrypted.trim();
-      // 烽火 Web 登录常见明文状态：0|3 等表示成功
-      if (status.startsWith('0|') || status == '0') {
+      if (status == '0|0' || status == '0') {
         decoded = <String, dynamic>{};
+      } else if (status.startsWith('0|')) {
+        throw StateError(
+            'FHAPIS Web 登录失败（状态码 $status）。请确认设备为烽火 RP0108 且超密为 F1ber$dm。');
       } else {
-        throw StateError('FHAPIS Web 登录失败或返回非预期响应：$text');
+        throw StateError('FHAPIS Web 登录返回非预期响应：$text');
       }
     }
 
