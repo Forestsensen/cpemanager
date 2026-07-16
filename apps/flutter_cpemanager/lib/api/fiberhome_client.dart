@@ -222,19 +222,37 @@ class FiberhomeClient {
     _raiseForStatus(response, text);
     _storeCookies(response);
 
-    // AES 解密响应
+    // AES 解密响应（服务端可能返回密文 JSON，也可能返回明文状态码如 0|3）
     String decrypted;
     try {
       decrypted = _FiberhomeAes.decrypt(text, _sessionId.trim());
     } catch (_) {
-      // 如果解密失败，可能服务端返回了明文（如 0| 错误）
       decrypted = text;
     }
-    final decoded = _decodeJson(decrypted);
+
+    // 响应可能是 JSON {"sessionid":"..."}，也可能是明文状态码如 0|3
+    Map<String, dynamic> decoded;
+    try {
+      decoded = _decodeJson(decrypted);
+    } on FormatException {
+      final status = decrypted.trim();
+      // 烽火 Web 登录常见明文状态：0|3 等表示成功
+      if (status.startsWith('0|') || status == '0') {
+        decoded = <String, dynamic>{};
+      } else {
+        throw StateError('FHAPIS Web 登录失败或返回非预期响应：$text');
+      }
+    }
+
     final nextSession = decoded['sessionid']?.toString() ?? '';
     if (nextSession.isNotEmpty) {
-      // 登录后服务端可能轮换 sessionid，后续 FHAPIS 必须沿用同一个
       _sessionId = nextSession;
+    } else {
+      // 响应体没有 sessionid 时，尝试从 Cookie 获取；否则沿用 refreshSessionId 的 sessionid
+      final cookieSid = _cookies['sessionid']?.toString() ?? '';
+      if (cookieSid.isNotEmpty) {
+        _sessionId = cookieSid;
+      }
     }
     _superLoggedIn = true;
     return _sessionId;
