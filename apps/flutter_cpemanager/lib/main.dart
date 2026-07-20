@@ -196,6 +196,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String rawOutput = '';
   String atOutput = '';
   final TextEditingController atController = TextEditingController(text: 'AT+QENG="servingcell"');
+  final TextEditingController superPasswordController = TextEditingController();
   String? error;
   bool busy = false;
   bool autoRefresh = true;
@@ -525,9 +526,16 @@ class _HomeScreenState extends State<HomeScreen> {
         final client = FiberhomeClient(
           host: normalizedHost,
           username: 'superadmin',
-          password: r'F1ber$dm',
+          password: superPasswordController.text.trim().isNotEmpty
+              ? superPasswordController.text.trim()
+              : r'F1ber$dm',
         );
-        final result = await client.sendAtCommand(cmd);
+        final result = await client.sendAtCommand(
+          cmd,
+          superPassword: superPasswordController.text.trim().isNotEmpty
+              ? superPasswordController.text.trim()
+              : null,
+        );
         setState(() {
           atOutput = const JsonEncoder.withIndent('  ').convert(result);
         });
@@ -658,6 +666,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         atController: vendor == CpeVendor.fiberhome ? atController : null,
                         atOutput: atOutput,
                         onSendAt: busy ? null : sendAtCommand,
+                        superPasswordController: vendor == CpeVendor.fiberhome
+                            ? superPasswordController
+                            : null,
                       ),
                     ],
                   ),
@@ -945,6 +956,7 @@ class LoginWorkspace extends StatelessWidget {
     this.atOutput = '',
     this.onSendAt,
     this.rawOutput = '',
+    this.superPasswordController,
     super.key,
   });
 
@@ -957,6 +969,7 @@ class LoginWorkspace extends StatelessWidget {
   final String atOutput;
   final VoidCallback? onSendAt;
   final String rawOutput;
+  final TextEditingController? superPasswordController;
 
   @override
   Widget build(BuildContext context) {
@@ -1028,6 +1041,23 @@ class LoginWorkspace extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (superPasswordController != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: FieldBlock(
+                      label: '超管密码（可选）',
+                      helper:
+                          '留空则自动从设备读取真实超密（无需认证）。若设备已改密请填入 superadmin 密码。',
+                      child: TextField(
+                        controller: superPasswordController,
+                        obscureText: true,
+                        decoration: const InputDecoration(
+                          hintText: 'F1ber\$dm（留空自动获取）',
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                  ),
                 Row(
                   children: [
                     Expanded(

