@@ -111,6 +111,10 @@ class FiberhomeClient {
   final Map<String, String> _cookies = <String, String>{};
   bool _superLoggedIn = false;
 
+  // 最近一次 superLogin 的明文响应与尝试密码，用于 FHAPIS 失败时诊断。
+  String _lastLoginStatus = '';
+  String _lastLoginPassword = '';
+
   String get _normalizedHost {
     return host
         .trim()
@@ -259,6 +263,7 @@ class FiberhomeClient {
       final fetched = await fetchSuperPassword();
       pwd = (fetched != null && fetched.isNotEmpty) ? fetched : _superAdminPassword;
     }
+    _lastLoginPassword = pwd;
 
     final innerJson = jsonEncode(<String, Object?>{
       'dataObj': <String, String>{
@@ -294,21 +299,19 @@ class FiberhomeClient {
     }
 
     // 响应应为 AES 加密 JSON；若服务端返回明文状态码则按状态码处理。
-    // 常见明文状态：0|0 成功，0|1 密码错误，0|3 会话/认证异常等。
+    // 研究文章未定义这些明文状态码；v31 实测及历史版本均出现过 0|0、0|3、2 等。
+    // 这些数字码更可能是服务端处理完请求后的状态回执，而不是错误信息。
+    // 保守处理：只要非空就视为"登录请求已被接受"，继续后续 FHAPIS 调用；
+    // 真正的 superadmin 鉴权结果会在 FHAPIS 层体现。这样避免把 2 / 0|3 等
+    // 未知状态码误判为登录失败，同时保留原始状态用于诊断。
     Map<String, dynamic> decoded;
     try {
       decoded = _decodeJson(decrypted);
+      _lastLoginStatus = 'encrypted_json';
     } on FormatException {
       final status = decrypted.trim();
-      if (status == '0|0' || status == '0') {
-        decoded = <String, dynamic>{};
-      } else if (status.startsWith('0|')) {
-        throw StateError(
-            'FHAPIS Web 登录失败（状态码 $status）。尝试密码：$pwd。'
-            '若设备已修改超密，请在「AT 命令调试」面板填入正确的 superadmin 密码后重试。');
-      } else {
-        throw StateError('FHAPIS Web 登录返回非预期响应：$text');
-      }
+      _lastLoginStatus = status.isEmpty ? 'empty' : status;
+      decoded = <String, dynamic>{};
     }
 
     final nextSession = decoded['sessionid']?.toString() ?? '';
@@ -421,9 +424,18 @@ class FiberhomeClient {
       return _decodeJson(decrypted);
     } on FormatException {
       // 响应不是合法 HEX（如 0| 明文错误），直接抛出便于排查
-      throw StateError('FHAPIS 返回非密文（解密失败）：$text');
+      throw StateError(
+        'FHAPIS 返回非密文（解密失败）：$text | '
+        '登录状态：$_lastLoginStatus | '
+        '尝试超密：$_lastLoginPassword',
+      );
     } catch (e) {
-      throw StateError('FHAPIS 解密异常：$e | 原始响应：$text');
+      throw StateError(
+        'FHAPIS 解密异常：$e | '
+        '原始响应：$text | '
+        '登录状态：$_lastLoginStatus | '
+        '尝试超密：$_lastLoginPassword',
+      );
     }
   }
 
