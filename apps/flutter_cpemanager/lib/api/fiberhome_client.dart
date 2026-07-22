@@ -238,9 +238,10 @@ class FiberhomeClient {
         decrypted = text;
       }
       final decoded = _decodeJson(decrypted);
-      final pwd = decoded['WebSuperPassword']?.toString() ??
+      final rawPwd = decoded['WebSuperPassword']?.toString() ??
           decoded['value']?.toString() ??
           '';
+      final pwd = rawPwd.trim();
       return pwd.isNotEmpty ? pwd : null;
     } catch (_) {
       return null;
@@ -255,21 +256,50 @@ class FiberhomeClient {
   Future<String> superLogin({String? superPassword}) async {
     _sessionId = await refreshSessionId();
 
-    // 解析本次登录要用的密码：手动指定 > 设备读取 > 硬编码默认
-    String pwd;
+    // 构造候选密码列表：手动输入 > 设备读取 > 常见默认密码
+    final candidates = <String>[];
     if (superPassword != null && superPassword.trim().isNotEmpty) {
-      pwd = superPassword.trim();
-    } else {
-      final fetched = await fetchSuperPassword();
-      pwd = (fetched != null && fetched.isNotEmpty) ? fetched : _superAdminPassword;
+      candidates.add(superPassword.trim());
     }
-    _lastLoginPassword = pwd;
+    final fetched = await fetchSuperPassword();
+    if (fetched != null && fetched.isNotEmpty) {
+      candidates.add(fetched.trim());
+    }
+    candidates.addAll(<String>[
+      _superAdminPassword,
+      r'F1ber@dm',
+      r'F1ber$adm',
+    ]);
 
+    String? lastStatus;
+    String? lastText;
+    for (var i = 0; i < candidates.length; i++) {
+      final pwd = candidates[i];
+      _lastLoginPassword = pwd;
+      try {
+        final sid = await _trySuperLoginPassword(pwd);
+        _lastLoginStatus = _lastLoginStatus.isEmpty ? 'ok' : _lastLoginStatus;
+        _superLoggedIn = true;
+        return sid;
+      } on StateError catch (e) {
+        lastStatus = _lastLoginStatus;
+        lastText = lastText ?? e.message;
+        // 继续尝试下一个候选密码
+      }
+    }
+
+    throw StateError(
+      'superadmin 登录失败，已尝试 ${candidates.length} 个密码。'
+      '最后状态：$lastStatus | 最后响应：$lastText | '
+      '若您修改过超密，请在「AT 命令调试」面板手动填入。',
+    );
+  }
+
+  Future<String> _trySuperLoginPassword(String pwd) async {
     final innerJson = jsonEncode(<String, Object?>{
       'dataObj': <String, String>{
         // FHAPIS 必须使用 superadmin 账号，忽略外部传入的普通 username
         'username': 'superadmin',
-        // 优先用设备读取到的真实超密；否则用硬编码默认值（RP0108: F1ber$dm）
         'password': pwd,
       },
       'ajaxmethod': 'DO_WEB_LOGIN',
@@ -290,7 +320,7 @@ class FiberhomeClient {
     _raiseForStatus(response, text);
     _storeCookies(response);
 
-    // AES 解密响应（服务端可能返回密文 JSON，也可能返回明文状态码如 0|3）
+    // AES 解密响应（服务端可能返回密文 JSON，也可能返回明文状态码）
     String decrypted;
     try {
       decrypted = _FiberhomeAes.decrypt(text, _sessionId.trim());
@@ -298,20 +328,22 @@ class FiberhomeClient {
       decrypted = text;
     }
 
-    // 响应应为 AES 加密 JSON；若服务端返回明文状态码则按状态码处理。
-    // 研究文章未定义这些明文状态码；v31 实测及历史版本均出现过 0|0、0|3、2 等。
-    // 这些数字码更可能是服务端处理完请求后的状态回执，而不是错误信息。
-    // 保守处理：只要非空就视为"登录请求已被接受"，继续后续 FHAPIS 调用；
-    // 真正的 superadmin 鉴权结果会在 FHAPIS 层体现。这样避免把 2 / 0|3 等
-    // 未知状态码误判为登录失败，同时保留原始状态用于诊断。
+    // 严格判断登录是否成功：
+    // - 能解出合法 JSON → 成功（服务端返回加密响应）。
+    // - 明文为 "0|0" 或 "0" 或空 → 成功（常见成功状态码）。
+    // - 其它明文（如 0|1、0|3、2 等）→ 视为失败，换下一个密码。
     Map<String, dynamic> decoded;
     try {
       decoded = _decodeJson(decrypted);
       _lastLoginStatus = 'encrypted_json';
     } on FormatException {
       final status = decrypted.trim();
-      _lastLoginStatus = status.isEmpty ? 'empty' : status;
-      decoded = <String, dynamic>{};
+      _lastLoginStatus = status;
+      if (status.isEmpty || status == '0' || status == '0|0') {
+        decoded = <String, dynamic>{};
+      } else {
+        throw StateError('DO_WEB_LOGIN 返回非成功状态码：$status');
+      }
     }
 
     final nextSession = decoded['sessionid']?.toString() ?? '';
@@ -324,7 +356,6 @@ class FiberhomeClient {
         _sessionId = cookieSid;
       }
     }
-    _superLoggedIn = true;
     return _sessionId;
   }
 
@@ -415,6 +446,17 @@ class FiberhomeClient {
 
     final response = await request.close().timeout(timeout);
     final text = await response.transform(utf8.decoder).join();
+    if (response.statusCode == 403) {
+      throw StateError(
+        'FHAPIS 返回 403 Forbidden：当前账号/会话无权访问 AT 命令接口。\n'
+        '可能原因：\n'
+        '1. 设备固件已封堵 FHAPIS AT 命令（RP0109 及以后版本常见）；\n'
+        '2. superadmin 登录未真正成功；\n'
+        '3. 设备需要额外的 Cookie/Referer 校验。\n'
+        '登录状态：$_lastLoginStatus | 尝试超密：$_lastLoginPassword | '
+        'sessionid：${_sessionId.trim()}',
+      );
+    }
     _raiseForStatus(response, text);
     _storeCookies(response);
 
@@ -600,15 +642,21 @@ class FiberhomeClient {
         .set('Accept', 'application/json, text/javascript, */*; q=0.01');
     request.headers.set('Origin', 'http://$_normalizedHost');
     request.headers.set('Referer', 'http://$_normalizedHost/main.html');
-    request.headers.set('User-Agent', 'Mozilla/5.0 CPEManager/0.4.0');
+    request.headers.set(
+      'User-Agent',
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) '
+      'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+    );
     request.headers.set('X-Requested-With', 'XMLHttpRequest');
-    request.headers.set('Accept-Language', 'zh-CN,en,*');
-    if (_cookies.isNotEmpty) {
-      request.headers.set('Cookie', _cookieHeader());
-    }
+    request.headers.set('Accept-Language', 'zh-CN,zh;q=0.9,en;q=0.8');
+    request.headers.set('Accept-Encoding', 'gzip, deflate');
+    // 模拟浏览器会话：始终携带当前 sessionid，并叠加服务端下发的所有 Cookie。
+    // 部分固件的 Nginx 会校验 Cookie 中的 sessionid 才放行 /api/tmp/FHAPIS。
+    request.headers.set('Cookie', _cookieHeader(includeSessionId: true));
   }
 
   /// 解析并保存服务端下发的 Set-Cookie（模拟浏览器会话保持）。
+  /// 支持带引号、URL 编码、多个 Set-Cookie 头的值。
   void _storeCookies(HttpClientResponse response) {
     final setCookies = response.headers['set-cookie'];
     if (setCookies == null) return;
@@ -616,13 +664,26 @@ class FiberhomeClient {
       final pair = sc.split(';').first;
       final idx = pair.indexOf('=');
       if (idx > 0) {
-        _cookies[pair.substring(0, idx).trim()] = pair.substring(idx + 1).trim();
+        var name = pair.substring(0, idx).trim();
+        var value = pair.substring(idx + 1).trim();
+        // 去掉首尾引号
+        if (value.length > 1 &&
+            ((value.startsWith('"') && value.endsWith('"')) ||
+                (value.startsWith("'") && value.endsWith("'")))) {
+          value = value.substring(1, value.length - 1);
+        }
+        _cookies[name] = value;
       }
     }
   }
 
-  String _cookieHeader() {
-    return _cookies.entries.map((e) => '${e.key}=${e.value}').join('; ');
+  String _cookieHeader({bool includeSessionId = false}) {
+    final entries = Map<String, String>.from(_cookies);
+    final sid = _sessionId.trim();
+    if (includeSessionId && sid.isNotEmpty) {
+      entries['sessionid'] = sid;
+    }
+    return entries.entries.map((e) => '${e.key}=${e.value}').join('; ');
   }
 
   static Map<String, dynamic> _decodeJson(String text) {
