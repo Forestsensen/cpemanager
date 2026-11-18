@@ -64,9 +64,14 @@ jobs:
         if: failure()
         run: |
           echo "--- tail ---"
-          tail -n 40 /tmp/xcodebuild.log || true
-          grep -nE "error:|fatal error|failed with a nonzero exit|The following build commands failed|Error \\(Xcode" /tmp/xcodebuild.log \
-            | head -20 | while IFS= read -r line; do echo "::error::$line"; done
+          tail -n 80 /tmp/xcodebuild.log || true
+          # Dart/Flutter 的编译错误在 PhaseScriptExecution 之前，也会出现在行尾；
+          # 直接把尾部逐行转成 annotation，未登录即可读。
+          tail -n 60 /tmp/xcodebuild.log | while IFS= read -r line; do
+            echo "::error::TX $line"
+          done
+          grep -nE "Error:|error:|Target .* failed|Failed to|No such file|Undefined|isn't defined" /tmp/xcodebuild.log \
+            | head -25 | while IFS= read -r line; do echo "::error::GREP $line"; done
 
       - name: Upload xcodebuild log
         if: always()
