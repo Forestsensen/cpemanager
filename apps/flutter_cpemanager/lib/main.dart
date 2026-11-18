@@ -1135,7 +1135,7 @@ class LoginWorkspace extends StatelessWidget {
                               child: Text(preset),
                             ),
                         ],
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: _saveHostPresetAction,
                           child: Text('保存当前地址为预设'),
                         ),
