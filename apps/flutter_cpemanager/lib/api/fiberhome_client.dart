@@ -6,6 +6,8 @@ import 'dart:typed_data';
 
 import 'package:pointycastle/export.dart';
 
+import 'cpe_client.dart';
+
 // ─── AES-CBC 加密工具 ────────────────────────────────────────────
 //
 // 烈焰 LG6121F 的 FHAPIS 端点使用 AES-128-CBC 加密。
@@ -91,6 +93,18 @@ class _FiberhomeAes {
 
 // ─── 烽火 CPE 客户端 ─────────────────────────────────────────────
 
+/// 会话类请求专用的内部异常：仅由 401/403 或响应体 sessionid 失效特征触发，
+/// 交给 _withSessionRetry 刷新会话后重试一次。
+class _FiberhomeSessionExpiredException implements Exception {
+  _FiberhomeSessionExpiredException(this.message, {this.statusCode});
+
+  final String message;
+  final int? statusCode;
+
+  @override
+  String toString() => message;
+}
+
 class FiberhomeClient {
   FiberhomeClient({
     this.host = '192.168.8.1',
@@ -100,6 +114,10 @@ class FiberhomeClient {
     this.timeout = const Duration(seconds: 10),
   }) : _sessionId = sessionId {
     _http.findProxy = (_) => 'DIRECT';
+    // 仅对本机基地址主机放行自签证书（内网 CPE 与穿透通道都是自签），不降低其它站点校验。
+    final baseHost = Uri.parse(normalizeCpeBase(host)).host;
+    _http.badCertificateCallback =
+        (X509Certificate cert, String certHost, int port) => certHost == baseHost;
   }
 
   final String host;
@@ -115,28 +133,27 @@ class FiberhomeClient {
   String _lastLoginStatus = '';
   String _lastLoginPassword = '';
 
-  String get _normalizedHost {
-    return host
-        .trim()
-        .replaceFirst(RegExp(r'^https?://'), '')
-        .replaceFirst(RegExp(r'/$'), '');
-  }
+  /// 完整基地址（含协议）：https 通道不能被降级成 http。
+  String get _normalizedHost => normalizeCpeBase(host);
+
+  /// 远程链路 RTT 高，沿用 10 秒会把正常响应误判成失败。
+  Duration get _effectiveTimeout => isRemoteCpeBase(host) ? const Duration(seconds: 25) : timeout;
 
   String get sessionId => _sessionId;
 
   // ─── URI 定义 ────────────────────────────────────────────────
 
-  Uri get _toolUri => Uri.parse('http://$_normalizedHost/api/tmp/FHTOOLAPIS');
+  Uri get _toolUri => Uri.parse('$_normalizedHost/api/tmp/FHTOOLAPIS');
 
-  Uri get _apisUri => Uri.parse('http://$_normalizedHost/api/tmp/FHAPIS');
+  Uri get _apisUri => Uri.parse('$_normalizedHost/api/tmp/FHAPIS');
 
   Uri get _sessionUri => Uri.parse(
-        'http://$_normalizedHost/api/tmp/FHNCAPIS'
+        '$_normalizedHost/api/tmp/FHNCAPIS'
         '?ajaxmethod=get_refresh_sessionid',
       );
 
   Uri _toolGetUri(String ajaxMethod) {
-    return Uri.parse('http://$_normalizedHost/api/tmp/FHTOOLAPIS').replace(
+    return Uri.parse('$_normalizedHost/api/tmp/FHTOOLAPIS').replace(
       queryParameters: <String, String>{
         'ajaxmethod': ajaxMethod,
         'sessionid': _sessionId.trim(),
@@ -176,18 +193,29 @@ class FiberhomeClient {
   }
 
   Future<String> refreshSessionId() async {
-    final request = await _http.getUrl(_sessionUri).timeout(timeout);
-    _applyHeaders(request);
-    final response = await request.close().timeout(timeout);
-    final text = await response.transform(utf8.decoder).join();
-    _raiseForStatus(response, text);
-    _storeCookies(response);
+    // 刷新会话本身就是 _sessionUri 请求，失败时只补发一次同一条 GET，
+    // 绝不能再调 refreshSessionId()，否则会无限递归。
+    final text = await _withSessionRetry<String>(
+      _fetchSessionText,
+      refreshOnExpire: false,
+    );
     final decoded = _decodeJson(text);
     final nextSession = decoded['sessionid']?.toString() ?? '';
     if (nextSession.isEmpty) {
       throw StateError('烽火 get_refresh_sessionid 未返回 sessionid。');
     }
     return nextSession;
+  }
+
+  Future<String> _fetchSessionText() async {
+    final request = await _http.getUrl(_sessionUri).timeout(_effectiveTimeout);
+    _applyHeaders(request);
+    final response = await request.close().timeout(_effectiveTimeout);
+    final text = await response.transform(utf8.decoder).join();
+    _throwIfSessionExpired(response, text);
+    _raiseForStatus(response, text);
+    _storeCookies(response);
+    return text;
   }
 
   Future<void> _ensureLoggedIn() async {
@@ -207,6 +235,15 @@ class FiberhomeClient {
   /// 因此任何能连上设备局域网的人都能直接读出 superadmin 密码。
   /// 返回明文密码；读取失败（接口被限制/固件差异）时返回 null。
   Future<String?> fetchSuperPassword() async {
+    // FHNCAPIS 属于会话类只读请求：sessionid 失效时刷新一次再试一次。
+    try {
+      return await _withSessionRetry<String?>(_fetchSuperPasswordOnce);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String?> _fetchSuperPasswordOnce() async {
     try {
       final sid = _sessionId.trim().isNotEmpty
           ? _sessionId.trim()
@@ -219,16 +256,17 @@ class FiberhomeClient {
         'sessionid': sid,
       });
       final encryptedBody = _FiberhomeAes.encrypt(innerJson, sid);
-      final uri = Uri.parse('http://$_normalizedHost/api/tmp/FHNCAPIS');
-      final request = await _http.postUrl(uri).timeout(timeout);
+      final uri = Uri.parse('$_normalizedHost/api/tmp/FHNCAPIS');
+      final request = await _http.postUrl(uri).timeout(_effectiveTimeout);
       request.headers.set(HttpHeaders.contentTypeHeader, 'text/plain');
       _applyHeaders(request);
       final payload = utf8.encode(encryptedBody);
       request.contentLength = payload.length;
       request.add(payload);
 
-      final response = await request.close().timeout(timeout);
+      final response = await request.close().timeout(_effectiveTimeout);
       final text = await response.transform(utf8.decoder).join();
+      _throwIfSessionExpired(response, text);
       _raiseForStatus(response, text);
 
       String decrypted;
@@ -243,6 +281,9 @@ class FiberhomeClient {
           '';
       final pwd = rawPwd.trim();
       return pwd.isNotEmpty ? pwd : null;
+    } on _FiberhomeSessionExpiredException {
+      // 交给上层 _withSessionRetry 处理，不能被下面的兜底 catch 吞掉。
+      rethrow;
     } catch (_) {
       return null;
     }
@@ -307,15 +348,15 @@ class FiberhomeClient {
     });
 
     final encryptedBody = _FiberhomeAes.encrypt(innerJson, _sessionId.trim());
-    final uri = Uri.parse('http://$_normalizedHost/api/sign/DO_WEB_LOGIN');
-    final request = await _http.postUrl(uri).timeout(timeout);
+    final uri = Uri.parse('$_normalizedHost/api/sign/DO_WEB_LOGIN');
+    final request = await _http.postUrl(uri).timeout(_effectiveTimeout);
     request.headers.set(HttpHeaders.contentTypeHeader, 'text/plain');
     _applyHeaders(request);
     final payload = utf8.encode(encryptedBody);
     request.contentLength = payload.length;
     request.add(payload);
 
-    final response = await request.close().timeout(timeout);
+    final response = await request.close().timeout(_effectiveTimeout);
     final text = await response.transform(utf8.decoder).join();
     _raiseForStatus(response, text);
     _storeCookies(response);
@@ -381,7 +422,7 @@ class FiberhomeClient {
     if (!allowEmptyPassword && password.trim().isEmpty) {
       throw StateError('烽火设备需要管理密码。');
     }
-    final request = await _http.postUrl(_toolUri).timeout(timeout);
+    final request = await _http.postUrl(_toolUri).timeout(_effectiveTimeout);
     request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
     _applyHeaders(request);
     final payload = _encodeToolPayload(
@@ -391,7 +432,7 @@ class FiberhomeClient {
     );
     request.contentLength = payload.length;
     request.add(payload);
-    final response = await request.close().timeout(timeout);
+    final response = await request.close().timeout(_effectiveTimeout);
     final text = await response.transform(utf8.decoder).join();
     _raiseForStatus(response, text);
     return _decodeJson(text);
@@ -399,11 +440,20 @@ class FiberhomeClient {
 
   Future<Map<String, dynamic>> getTool(String ajaxMethod) async {
     await _ensureLoggedIn();
+    // _toolGetUri 是只读拉取，可安全重试；锁频/改模式等写操作走 _post/callApis，
+    // 不在重试范围内，避免重复提交。
+    return _withSessionRetry<Map<String, dynamic>>(
+      () => _getToolOnce(ajaxMethod),
+    );
+  }
+
+  Future<Map<String, dynamic>> _getToolOnce(String ajaxMethod) async {
     final request =
-        await _http.getUrl(_toolGetUri(ajaxMethod)).timeout(timeout);
+        await _http.getUrl(_toolGetUri(ajaxMethod)).timeout(_effectiveTimeout);
     _applyHeaders(request);
-    final response = await request.close().timeout(timeout);
+    final response = await request.close().timeout(_effectiveTimeout);
     final text = await response.transform(utf8.decoder).join();
+    _throwIfSessionExpired(response, text);
     _raiseForStatus(response, text);
     return _decodeJson(text);
   }
@@ -437,14 +487,14 @@ class FiberhomeClient {
     final encryptedBody = _FiberhomeAes.encrypt(innerJson, _sessionId.trim());
 
     // 发送 POST
-    final request = await _http.postUrl(_apisUri).timeout(timeout);
+    final request = await _http.postUrl(_apisUri).timeout(_effectiveTimeout);
     request.headers.set(HttpHeaders.contentTypeHeader, 'text/plain');
     _applyHeaders(request);
     final payload = utf8.encode(encryptedBody);
     request.contentLength = payload.length;
     request.add(payload);
 
-    final response = await request.close().timeout(timeout);
+    final response = await request.close().timeout(_effectiveTimeout);
     final text = await response.transform(utf8.decoder).join();
     if (response.statusCode == 403) {
       throw StateError(
@@ -509,8 +559,14 @@ class FiberhomeClient {
   /// [parameter] 是完整的 TR-069 参数路径，例如：
   ///   InternetGatewayDevice.X_FH_WebUserInfo.2.WebSuperPassword
   Future<Map<String, dynamic>> getTr069Parameter(String parameter) async {
+    return _withSessionRetry<Map<String, dynamic>>(
+      () => _getTr069ParameterOnce(parameter),
+    );
+  }
+
+  Future<Map<String, dynamic>> _getTr069ParameterOnce(String parameter) async {
     final uri = Uri.parse(
-      'http://$_normalizedHost/api/tmp/FHNCAPIS'
+      '$_normalizedHost/api/tmp/FHNCAPIS'
       '?ajaxmethod=get_value_by_xmlnode',
     );
     final sid = _sessionId.trim().isNotEmpty
@@ -525,15 +581,16 @@ class FiberhomeClient {
       'sessionid': sid,
     });
 
-    final request = await _http.postUrl(uri).timeout(timeout);
+    final request = await _http.postUrl(uri).timeout(_effectiveTimeout);
     request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
     _applyHeaders(request);
     final payload = utf8.encode(body);
     request.contentLength = payload.length;
     request.add(payload);
 
-    final response = await request.close().timeout(timeout);
+    final response = await request.close().timeout(_effectiveTimeout);
     final text = await response.transform(utf8.decoder).join();
+    _throwIfSessionExpired(response, text);
     _raiseForStatus(response, text);
     return _decodeJson(text);
   }
@@ -640,8 +697,8 @@ class FiberhomeClient {
   void _applyHeaders(HttpClientRequest request) {
     request.headers
         .set('Accept', 'application/json, text/javascript, */*; q=0.01');
-    request.headers.set('Origin', 'http://$_normalizedHost');
-    request.headers.set('Referer', 'http://$_normalizedHost/main.html');
+    request.headers.set('Origin', '$_normalizedHost');
+    request.headers.set('Referer', '$_normalizedHost/main.html');
     request.headers.set(
       'User-Agent',
       'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) '
@@ -695,6 +752,72 @@ class FiberhomeClient {
       return decoded.map((key, value) => MapEntry(key.toString(), value));
     }
     return <String, dynamic>{'value': decoded};
+  }
+
+  /// 401/403 或响应体明确提示 sessionid 失效时，抛出内部异常交给重试包装器。
+  static void _throwIfSessionExpired(HttpClientResponse response, String text) {
+    final status = response.statusCode;
+    if (status == 401 || status == 403) {
+      throw _FiberhomeSessionExpiredException(
+        'HTTP $status: 会话失效或无权访问',
+        statusCode: status,
+      );
+    }
+    final lower = text.toLowerCase();
+    if (!lower.contains('sessionid')) return;
+    // 用成对特征匹配，避免把响应里正常的 timeout 字段误判成会话失效。
+    const markers = <String>[
+      'sessionid invalid',
+      'invalid sessionid',
+      'sessionid expire',
+      'sessionid expired',
+      'sessionid timeout',
+      'sessionid not exist',
+      'sessionid is null',
+      'sessionid error',
+      'sessionid无效',
+      'sessionid失效',
+      'sessionid过期',
+      'sessionid不存在',
+      '未登录',
+      '请重新登录',
+    ];
+    if (markers.any(lower.contains)) {
+      throw _FiberhomeSessionExpiredException(
+        '响应提示 sessionid 失效：$text',
+      );
+    }
+  }
+
+  /// 会话类请求的统一重试包装：命中会话失效时刷新一次 sessionid 后重试一次，
+  /// 第二次仍失效则抛出原异常。写操作（_post / callApis / superLogin）不经过这里。
+  Future<T> _withSessionRetry<T>(
+    Future<T> Function() action, {
+    bool refreshOnExpire = true,
+  }) async {
+    try {
+      return await action();
+    } on _FiberhomeSessionExpiredException catch (first) {
+      if (!refreshOnExpire) {
+        throw _asSessionError(first);
+      }
+      _sessionId = await refreshSessionId();
+      // 会话变了，FHAPIS 的 AES key 也随之失效，下次调用必须重新 superLogin。
+      _superLoggedIn = false;
+      try {
+        return await action();
+      } on _FiberhomeSessionExpiredException catch (second) {
+        throw _asSessionError(second);
+      }
+    }
+  }
+
+  static Object _asSessionError(_FiberhomeSessionExpiredException error) {
+    final status = error.statusCode;
+    if (status != null) {
+      return HttpException(error.message);
+    }
+    return StateError(error.message);
   }
 
   static void _raiseForStatus(HttpClientResponse response, String body) {

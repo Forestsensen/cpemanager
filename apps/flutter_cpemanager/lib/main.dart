@@ -178,6 +178,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final hostController = TextEditingController(text: '192.168.8.1');
+  List<String> savedHostPresets = [];
   final usernameController = TextEditingController(text: 'admin');
   final passwordController = TextEditingController();
   final lteBandController = TextEditingController();
@@ -203,6 +204,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool backgroundRefresh = false;
   String busyLabel = '';
   DateTime? lastUpdated;
+  int? lastLatencyMs;
   Timer? refreshTimer;
 
   @override
@@ -216,6 +218,8 @@ class _HomeScreenState extends State<HomeScreen> {
       unawaited(refreshSnapshot(silent: true));
     });
   }
+
+  static const String _saveHostPresetAction = '__save_current_host__';
 
   Future<File> get _credFile async {
     final dir = await getApplicationDocumentsDirectory();
@@ -236,6 +240,25 @@ class _HomeScreenState extends State<HomeScreen> {
       if (data['password'] != null && (data['password'] as String).isNotEmpty) {
         passwordController.text = data['password'];
       }
+      final rawPresets = data['hostPresets'];
+      if (rawPresets is List) {
+        final loaded = <String>[];
+        for (final item in rawPresets) {
+          if (item is! String) {
+            continue;
+          }
+          final value = item.trim();
+          if (value.isEmpty || loaded.contains(value)) {
+            continue;
+          }
+          loaded.add(value);
+        }
+        if (loaded.isNotEmpty) {
+          setState(() {
+            savedHostPresets = loaded.take(8).toList();
+          });
+        }
+      }
       if (data['vendor'] != null) {
         final match = CpeVendor.values.where((v) => v.code == data['vendor']);
         if (match.isNotEmpty) {
@@ -250,13 +273,33 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _saveCredentials() async {
     try {
       final file = await _credFile;
-      await file.writeAsString(jsonEncode({
-        'host': hostController.text.trim(),
-        'username': usernameController.text.trim(),
-        'password': passwordController.text,
-        'vendor': vendor.code,
-      }));
+      Map<String, dynamic> data = {};
+      if (await file.exists()) {
+        data = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      }
+      data['host'] = hostController.text.trim();
+      data['username'] = usernameController.text.trim();
+      data['password'] = passwordController.text;
+      data['vendor'] = vendor.code;
+      data['hostPresets'] = savedHostPresets;
+      await file.writeAsString(jsonEncode(data));
     } catch (_) {}
+  }
+
+  void _saveCurrentHostAsPreset() {
+    final value = hostController.text.trim();
+    if (value.isEmpty ||
+        const ['192.168.8.1', 'http://', 'https://'].contains(value) ||
+        savedHostPresets.contains(value)) {
+      return;
+    }
+    setState(() {
+      savedHostPresets = [...savedHostPresets, value];
+      if (savedHostPresets.length > 8) {
+        savedHostPresets = savedHostPresets.sublist(savedHostPresets.length - 8);
+      }
+    });
+    _saveCredentials();
   }
 
   @override
@@ -347,6 +390,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     try {
       await runTask('读取设备状态', () async {
+        final stopwatch = Stopwatch()..start();
         if (vendor == CpeVendor.huawei) {
           final cpe = huaweiClient();
           final next = await cpe.snapshot();
@@ -377,6 +421,9 @@ class _HomeScreenState extends State<HomeScreen> {
             rawOutput = '$keysDiag\n$json';
             lastUpdated = DateTime.now();
           });
+        }
+        if (mounted) {
+          setState(() => lastLatencyMs = stopwatch.elapsedMilliseconds);
         }
       }, silent: silent);
     } finally {
@@ -553,7 +600,12 @@ class _HomeScreenState extends State<HomeScreen> {
           builder: (context) {
             return AlertDialog(
               title: const Text('确认操作'),
-              content: Text(message),
+              content: Text(
+                isRemoteCpeBase(normalizedHost)
+                    ? message +
+                        '\n\n当前为远程连接：执行后若链路中断，设备可能失联，需要从内网或穿透面板恢复。'
+                    : message,
+              ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(false),
@@ -985,13 +1037,111 @@ class LoginWorkspace extends StatelessWidget {
               const SizedBox(height: 12),
               DeviceProfileCard(profile: profile),
               const SizedBox(height: 12),
+              ValueListenableBuilder<TextEditingValue>(
+                valueListenable: hostController,
+                builder: (context, hostValue, _) {
+                  final remote = isRemoteCpeBase(
+                    hostValue.text.trim().isEmpty
+                        ? '192.168.8.1'
+                        : hostValue.text.trim(),
+                  );
+                  return SizedBox(
+                    height: 24,
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.circle,
+                          size: 8,
+                          color: remote
+                              ? (Theme.of(context).brightness ==
+                                      Brightness.dark
+                                  ? Colors.orange.shade300
+                                  : Colors.orange.shade800)
+                              : Colors.green,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          remote ? '远程连接' : '内网直连',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: remote
+                                    ? (Theme.of(context).brightness ==
+                                            Brightness.dark
+                                        ? Colors.orange.shade300
+                                        : Colors.orange.shade800)
+                                    : Colors.green,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                        if (remote || lastLatencyMs != null) ...[
+                          const Spacer(),
+                          Text(
+                            [
+                              if (remote) '建议使用 https',
+                              if (lastLatencyMs != null) lastLatencyMs.toString() + 'ms',
+                            ].join(' · '),
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: CpeColors.muted),
+                          ),
+                        ],
+                      ],
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 6),
               FieldBlock(
                 label: 'CPE 地址',
-                helper: '局域网后台地址，默认 192.168.8.1',
+                helper: '内网填 192.168.8.1；远程可填 http(s)://域名:端口 或组网虚拟 IP',
                 child: TextField(
                   controller: hostController,
                   keyboardType: TextInputType.url,
-                  decoration: InputDecoration(hintText: '192.168.8.1'),
+                  decoration: InputDecoration(
+                    hintText: '192.168.8.1',
+                    suffixIcon: PopupMenuButton<String>(
+                      icon: const Icon(Icons.dns_outlined),
+                      tooltip: '连接预设',
+                      onSelected: (value) {
+                        if (value == _saveHostPresetAction) {
+                          _saveCurrentHostAsPreset();
+                          return;
+                        }
+                        hostController.value = TextEditingValue(
+                          text: value,
+                          selection: TextSelection.collapsed(
+                            offset: value.length,
+                          ),
+                        );
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: '192.168.8.1',
+                          child: Text('内网 192.168.8.1'),
+                        ),
+                        const PopupMenuItem(
+                          value: 'http://',
+                          child: Text('穿透 http'),
+                        ),
+                        const PopupMenuItem(
+                          value: 'https://',
+                          child: Text('穿透 https'),
+                        ),
+                        if (savedHostPresets.isNotEmpty) ...[
+                          const PopupMenuDivider(),
+                          for (final preset in savedHostPresets)
+                            PopupMenuItem(
+                              value: preset,
+                              child: Text(preset),
+                            ),
+                        ],
+                        const PopupMenuItem(
+                          value: _saveHostPresetAction,
+                          child: Text('保存当前地址为预设'),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(height: 12),

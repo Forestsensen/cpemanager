@@ -14,6 +14,10 @@ class CpeClient {
     this.timeout = const Duration(seconds: 10),
   }) {
     _http.findProxy = (_) => 'DIRECT';
+    // 仅对本机基地址主机放行自签证书（内网 CPE 与穿透通道都是自签），不降低其它站点校验。
+    final baseHost = Uri.parse(normalizeCpeBase(host)).host;
+    _http.badCertificateCallback =
+        (X509Certificate cert, String certHost, int port) => certHost == baseHost;
   }
 
   final String host;
@@ -23,25 +27,61 @@ class CpeClient {
   final HttpClient _http = HttpClient();
   final Map<String, String> _cookies = <String, String>{};
   String _requestToken = '';
+  /// 只有登录成功后才可能因会话失效触发一次自动重登。
+  bool _loggedIn = false;
 
-  String get _normalizedHost {
-    return host
-        .trim()
-        .replaceFirst(RegExp(r'^https?://'), '')
-        .replaceFirst(RegExp(r'/$'), '');
-  }
+  /// 完整基地址（含协议）：https 通道不能被降级成 http。
+  String get _base => normalizeCpeBase(host);
+
+  bool get _isRemote => isRemoteCpeBase(host);
+
+  /// 远程链路 RTT 高，沿用 10 秒会把正常响应误判成失败。
+  Duration get _effectiveTimeout => _isRemote ? const Duration(seconds: 25) : timeout;
 
   Uri _uri(String endpoint) {
     if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
       return Uri.parse(endpoint);
     }
-    return Uri.parse('http://$_normalizedHost$endpoint');
+    return Uri.parse('$_base$endpoint');
   }
 
   Future<String> getXml(String endpoint) async {
-    final request = await _http.getUrl(_uri(endpoint)).timeout(timeout);
+    // 只读请求失败最多重发一次；postXml / AT / 锁频 / 重启一律不重试，
+    // 避免把同一条写指令重复提交给设备。
+    try {
+      return await _getOnce(endpoint);
+    } catch (error, stack) {
+      // 401/403 是会话失效：已登录时重登一次再重发，最多一次，不做循环。
+      if (error is HttpException && _isAuthFailure(error) && _loggedIn) {
+        try {
+          await login();
+        } catch (_) {
+          // 重登本身失败时抛出原始的 401/403，诊断信息更直接。
+          Error.throwWithStackTrace(error, stack);
+        }
+        try {
+          return await _getOnce(endpoint);
+        } catch (_) {
+          // 重登后仍失败：抛原 401/403，且不再重试，杜绝循环。
+          Error.throwWithStackTrace(error, stack);
+        }
+      }
+      if (error is SocketException ||
+          error is TimeoutException ||
+          error is HttpException) {
+        // 传输层抖动：等 300ms 让链路恢复，只补发一次。
+        await Future.delayed(const Duration(milliseconds: 300));
+        return _getOnce(endpoint);
+      }
+      Error.throwWithStackTrace(error, stack);
+    }
+  }
+
+  /// 单次只读请求：发请求 + 读响应，自身不重试，是否重试由 getXml 决定。
+  Future<String> _getOnce(String endpoint) async {
+    final request = await _http.getUrl(_uri(endpoint)).timeout(_effectiveTimeout);
     _applyHeaders(request);
-    final response = await request.close().timeout(timeout);
+    final response = await request.close().timeout(_effectiveTimeout);
     _captureCookies(response);
     final text = await response.transform(utf8.decoder).join();
     _raiseForStatus(response, text);
@@ -49,7 +89,29 @@ class CpeClient {
   }
 
   Future<String> postXml(String endpoint, String body) async {
-    final request = await _http.postUrl(_uri(endpoint)).timeout(timeout);
+    // 写操作不做传输层重试，只有会话失效（401/403）才重登一次并重发一次。
+    // login() 期间 _loggedIn 为 false，内部请求不会再触发重登，杜绝循环。
+    try {
+      return await _postOnce(endpoint, body);
+    } on HttpException catch (error, stack) {
+      if (!_isAuthFailure(error) || !_loggedIn) rethrow;
+      try {
+        await login();
+      } catch (_) {
+        // 重登失败：抛出原始 401/403，便于区分是密码问题还是会话问题。
+        Error.throwWithStackTrace(error, stack);
+      }
+      // 会话已刷新，原写请求只补发一次；再失败抛原异常，不循环。
+      try {
+        return await _postOnce(endpoint, body);
+      } catch (_) {
+        Error.throwWithStackTrace(error, stack);
+      }
+    }
+  }
+
+  Future<String> _postOnce(String endpoint, String body) async {
+    final request = await _http.postUrl(_uri(endpoint)).timeout(_effectiveTimeout);
     _applyHeaders(request);
     request.headers.contentType = ContentType(
       'application',
@@ -62,7 +124,7 @@ class CpeClient {
     final payload = utf8.encode(body);
     request.contentLength = payload.length;
     request.add(payload);
-    final response = await request.close().timeout(timeout);
+    final response = await request.close().timeout(_effectiveTimeout);
     _captureCookies(response);
     final text = await response.transform(utf8.decoder).join();
     _raiseForStatus(response, text);
@@ -95,6 +157,13 @@ class CpeClient {
   }
 
   Future<void> login() async {
+    // 登录期间保持 false：login() 内部请求即便返回 401/403 也不会递归重登。
+    _loggedIn = false;
+    await _doLogin();
+    _loggedIn = true;
+  }
+
+  Future<void> _doLogin() async {
     try {
       await getXml('/html/content.html');
     } catch (_) {
@@ -392,6 +461,12 @@ class CpeClient {
     }
   }
 
+  /// 只把 401/403 当作会话失效，其它 4xx/5xx 不触发重登。
+  static bool _isAuthFailure(HttpException error) {
+    final message = error.message;
+    return message.startsWith('HTTP 401') || message.startsWith('HTTP 403');
+  }
+
   static void _raiseForStatus(HttpClientResponse response, String body) {
     if (response.statusCode >= 400) {
       throw HttpException('HTTP ${response.statusCode}: $body');
@@ -418,4 +493,25 @@ class CpeClient {
       _cookies[cookie.name] = cookie.value;
     }
   }
+}
+
+
+/// 把用户输入统一成基地址：空→默认内网；缺协议→补 http://；保留端口；去掉结尾多余的 /
+/// 内网、穿透域名、组网虚拟 IP 共用这一套口径，避免每个调用点各写一份。
+String normalizeCpeBase(String raw) {
+  var value = raw.trim();
+  if (value.isEmpty) return 'http://192.168.8.1';
+  if (!value.startsWith('http://') && !value.startsWith('https://')) {
+    value = 'http://$value';
+  }
+  while (value.endsWith('/')) {
+    value = value.substring(0, value.length - 1);
+  }
+  return value;
+}
+
+/// 只有默认内网管理地址算内网，其余（虚拟 IP / 穿透域名 / 带端口）一律按远程处理。
+bool isRemoteCpeBase(String raw) {
+  final uri = Uri.tryParse(normalizeCpeBase(raw));
+  return uri == null || uri.host != '192.168.8.1';
 }
