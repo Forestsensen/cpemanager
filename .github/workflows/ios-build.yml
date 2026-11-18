@@ -46,6 +46,7 @@ jobs:
           CODE_SIGNING_ALLOWED: NO
           CODE_SIGNING_REQUIRED: NO
         run: |
+          set -o pipefail
           xcodebuild -workspace Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
@@ -55,7 +56,25 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            DEVELOPMENT_TEAM=""
+            DEVELOPMENT_TEAM="" 2>&1 | tee /tmp/xcodebuild.log
+
+      # 失败原因只在步骤日志里，而日志下载要仓库权限；
+      # 转成 annotation 后，未登录也能通过 check-runs API 读到真实报错。
+      - name: Surface build errors as annotations
+        if: failure()
+        run: |
+          echo "--- tail ---"
+          tail -n 40 /tmp/xcodebuild.log || true
+          grep -nE "error:|fatal error|failed with a nonzero exit|The following build commands failed|Error \\(Xcode" /tmp/xcodebuild.log \
+            | head -20 | while IFS= read -r line; do echo "::error::$line"; done
+
+      - name: Upload xcodebuild log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: /tmp/xcodebuild.log
+          if-no-files-found: ignore
 
       - name: Package IPA (for TrollStore)
         working-directory: ${{ env.PROJECT_DIR }}
