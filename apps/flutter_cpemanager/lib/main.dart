@@ -9,6 +9,9 @@ import 'api/cpe_client.dart';
 import 'api/fiberhome_client.dart';
 import 'domain/cell_math.dart';
 
+/// 预设菜单里「保存当前地址」这一项的哨兵值，状态层与登录组件共用。
+const String _saveHostPresetAction = '__save_current_host__';
+
 void main() {
   runApp(const CpeManagerApp());
 }
@@ -218,8 +221,6 @@ class _HomeScreenState extends State<HomeScreen> {
       unawaited(refreshSnapshot(silent: true));
     });
   }
-
-  static const String _saveHostPresetAction = '__save_current_host__';
 
   Future<File> get _credFile async {
     final dir = await getApplicationDocumentsDirectory();
@@ -721,6 +722,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         superPasswordController: vendor == CpeVendor.fiberhome
                             ? superPasswordController
                             : null,
+                        lastLatencyMs: lastLatencyMs,
+                        savedHostPresets: savedHostPresets,
+                        onSavePreset: _saveCurrentHostAsPreset,
                       ),
                     ],
                   ),
@@ -1009,6 +1013,9 @@ class LoginWorkspace extends StatelessWidget {
     this.onSendAt,
     this.rawOutput = '',
     this.superPasswordController,
+    this.lastLatencyMs,
+    this.savedHostPresets = const <String>[],
+    this.onSavePreset,
     super.key,
   });
 
@@ -1022,6 +1029,10 @@ class LoginWorkspace extends StatelessWidget {
   final VoidCallback? onSendAt;
   final String rawOutput;
   final TextEditingController? superPasswordController;
+  /// 上一次刷新耗时；远程链路的体验指标，null 表示还没刷新过。
+  final int? lastLatencyMs;
+  final List<String> savedHostPresets;
+  final VoidCallback? onSavePreset;
 
   @override
   Widget build(BuildContext context) {
@@ -1104,7 +1115,7 @@ class LoginWorkspace extends StatelessWidget {
                       tooltip: '连接预设',
                       onSelected: (value) {
                         if (value == _saveHostPresetAction) {
-                          _saveCurrentHostAsPreset();
+                          onSavePreset?.call();
                           return;
                         }
                         hostController.value = TextEditingValue(
